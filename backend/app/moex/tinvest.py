@@ -8,21 +8,27 @@ MOEX ISS больше не отдаёт историю дивидендов, Sma
 """
 
 import logging
-from datetime import date, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 
 log = logging.getLogger(__name__)
 
 BASE = "https://invest-public-api.tinkoff.ru/rest/tinkoff.public.invest.api.contract.v1.InstrumentsService"
+# Нац. удостоверяющий центр Минцифры не входит в стандартные системные хранилища доверенных СА
+RU_CA_BUNDLE = Path(__file__).parent / "certs" / "russian_trusted_root.pem"
 
 
 def _iso(d: date) -> str:
-    return d.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _money(m: dict) -> float:
-    return m.get("units", 0) + m.get("nano", 0) / 1e9
+    try:
+        return int(m.get("units", 0)) + int(m.get("nano", 0)) / 1e9
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class TInvestDividends:
@@ -31,6 +37,7 @@ class TInvestDividends:
             base_url=BASE,
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             timeout=timeout,
+            verify=str(RU_CA_BUNDLE) if RU_CA_BUNDLE.exists() else True,
         )
 
     def close(self) -> None:

@@ -1,5 +1,7 @@
 """Клиент MOEX ISS API: https://www.moex.com/a2193 """
 
+from datetime import date, timedelta
+
 import httpx
 
 from ..config import settings
@@ -22,6 +24,10 @@ SHARE_MARKETDATA_COLUMNS = "SECID,LAST,VALTODAY,NUMTRADES"
 BOND_BOARDS = ("TQOB", "TQIR", "TQCB", "TQOD")  # ОФЗ, муниципальные, корпоративные, облигации Д
 SHARE_BOARDS = ("TQBR",)
 
+# Итоги последнего торгового дня — запасной вариант, когда marketdata пуст (выходные)
+HISTORY_BOND_COLUMNS = "SECID,CLOSE,VALUE,NUMTRADES,YIELD,DURATION"
+HISTORY_SHARE_COLUMNS = "SECID,CLOSE,VALUE,NUMTRADES"
+
 
 def _fetch_block(url: str, block: str, columns: str, params: dict | None = None) -> list[dict]:
     query = {"iss.meta": "off", "iss.only": block, f"{block}.columns": columns}
@@ -38,27 +44,55 @@ class MoexClient:
     def __init__(self) -> None:
         self.base = settings.moex_base_url
 
-    def get_bonds(self, board: str) -> list[dict]:
-        url = f"{self.base}/engines/stock/markets/bonds/boards/{board}/securities.json"
-        securities = _fetch_block(url, "securities", BOND_SECURITY_COLUMNS)
+    def _history_latest(self, market: str, board: str, columns: str) -> dict[str, dict]:
+        """Итоги последнего торгового дня: идём назад до 5 дней, пока не найдём данные."""
+        url = f"{self.base}/history/engines/stock/markets/{market}/boards/{board}/securities.json"
+        for back in range(1, 6):
+            day = (date.today() - timedelta(days=back)).isoformat()
+            result: dict[str, dict] = {}
+            start = 0
+            while True:
+                rows = _fetch_block(url, "history", columns, {"date": day, "start": start})
+                if not rows:
+                    break
+                for r in rows:
+                    result[r["SECID"]] = r
+                if len(rows) < 100:
+                    break
+                start += 100
+            if result:
+                return result
+        return {}
+
+    def _merge_marketdata(self, url: str, market: str, board: str,
+                          sec_cols: str, md_cols: str, hist_cols: str) -> list[dict]:
+        securities = _fetch_block(url, "securities", sec_cols)
         marketdata = {
             r["SECID"]: r
-            for r in _fetch_block(url, "marketdata", BOND_MARKETDATA_COLUMNS)
+            for r in _fetch_block(url, "marketdata", md_cols)
         }
         for row in securities:
             row.update({f"MD_{k}": v for k, v in marketdata.get(row["SECID"], {}).items()})
+        # В выходные marketdata пуст — подставляем итоги последнего торгового дня
+        if not any(r.get("MD_VALTODAY") for r in securities):
+            hist = self._history_latest(market, board, hist_cols)
+            for row in securities:
+                h = hist.get(row["SECID"])
+                if h:
+                    row.update({f"H_{k}": v for k, v in h.items()})
         return securities
+
+    def get_bonds(self, board: str) -> list[dict]:
+        url = f"{self.base}/engines/stock/markets/bonds/boards/{board}/securities.json"
+        return self._merge_marketdata(url, "bonds", board,
+                                      BOND_SECURITY_COLUMNS, BOND_MARKETDATA_COLUMNS,
+                                      HISTORY_BOND_COLUMNS)
 
     def get_shares(self, board: str) -> list[dict]:
         url = f"{self.base}/engines/stock/markets/shares/boards/{board}/securities.json"
-        securities = _fetch_block(url, "securities", SHARE_SECURITY_COLUMNS)
-        marketdata = {
-            r["SECID"]: r
-            for r in _fetch_block(url, "marketdata", SHARE_MARKETDATA_COLUMNS)
-        }
-        for row in securities:
-            row.update({f"MD_{k}": v for k, v in marketdata.get(row["SECID"], {}).items()})
-        return securities
+        return self._merge_marketdata(url, "shares", board,
+                                      SHARE_SECURITY_COLUMNS, SHARE_MARKETDATA_COLUMNS,
+                                      HISTORY_SHARE_COLUMNS)
 
     def get_dividends(self, secid: str) -> list[dict]:
         """Дивиденды по тикеру (источник: Smart-Lab, т.к. MOEX ISS их убрал)."""

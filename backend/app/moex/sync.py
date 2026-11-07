@@ -50,9 +50,7 @@ def sync_bonds(client: MoexClient, db) -> int:
         reg = str(r.get("REGNUMBER") or "")
         bond_type = str(r.get("BONDTYPE") or "")
         bond_subtype = str(r.get("BONDSUBTYPE") or "")
-        yield_ = _num(r.get("MD_YIELD"))
-        if yield_ <= 0:
-            yield_ = _num(r.get("MD_YIELDATWAPRICE"))
+        yield_ = _num(r.get("MD_YIELD")) or _num(r.get("MD_YIELDATWAPRICE")) or _num(r.get("H_YIELD"))
         db.add(Bond(
             secid=secid,
             shortname=str(r.get("SHORTNAME") or ""),
@@ -61,9 +59,9 @@ def sync_bonds(client: MoexClient, db) -> int:
             face_value=_num(r.get("FACEVALUE")),
             face_unit=str(r.get("FACEUNIT") or "SUR"),
             prev_price=_num(r.get("PREVPRICE")),
-            last_price=_num(r.get("MD_LAST") or r.get("MD_LASTBID") or r.get("PREVPRICE")),
+            last_price=_num(r.get("MD_LAST") or r.get("MD_LASTBID") or r.get("H_CLOSE") or r.get("PREVPRICE")),
             yield_at_pricing=yield_,
-            duration=_num(r.get("MD_DURATION")),
+            duration=_num(r.get("MD_DURATION")) or _num(r.get("H_DURATION")),
             coupon_value=_num(r.get("COUPONVALUE")),
             coupon_percent=_num(r.get("COUPONPERCENT")),
             coupon_period=int(_num(r.get("COUPONPERIOD"))),
@@ -77,8 +75,8 @@ def sync_bonds(client: MoexClient, db) -> int:
             issue_size=_num(r.get("ISSUESIZE")),
             list_level=int(_num(r.get("LISTLEVEL"))),
             is_ofz=1 if str(r.get("SHORTNAME") or "").startswith("ОФЗ") else 0,
-            val_today=_num(r.get("MD_VALTODAY")),
-            num_trades=int(_num(r.get("MD_NUMTRADES"))),
+            val_today=_num(r.get("MD_VALTODAY")) or _num(r.get("H_VALUE")),
+            num_trades=int(_num(r.get("MD_NUMTRADES")) or _num(r.get("H_NUMTRADES"))),
         ))
     db.commit()
     return len(best)
@@ -101,19 +99,22 @@ def sync_shares(client: MoexClient, db) -> int:
             isin=str(r.get("ISIN") or ""),
             regnumber=str(r.get("REGNUMBER") or ""),
             prev_price=_num(r.get("PREVPRICE")),
-            last_price=_num(r.get("MD_LAST") or r.get("PREVPRICE")),
+            last_price=_num(r.get("MD_LAST") or r.get("H_CLOSE") or r.get("PREVPRICE")),
             lot_size=int(_num(r.get("LOTSIZE"), 1)),
             issue_size=_num(r.get("ISSUESIZE")),
             list_level=int(_num(r.get("LISTLEVEL"))),
-            val_today=_num(r.get("MD_VALTODAY")),
-            num_trades=int(_num(r.get("MD_NUMTRADES"))),
+            val_today=_num(r.get("MD_VALTODAY")) or _num(r.get("H_VALUE")),
+            num_trades=int(_num(r.get("MD_NUMTRADES")) or _num(r.get("H_NUMTRADES"))),
         ))
     db.add_all(share_objs)
     db.commit()
 
     # Дивиденды: T-Invest API (официально), при отсутствии токена — Smart-Lab
     db.execute(delete(Dividend))
-    targets = [s for s in share_objs if s.list_level == 1 and s.last_price > 0][:120]
+    targets = sorted(
+        (s for s in share_objs if s.list_level == 1 and s.last_price > 0),
+        key=lambda s: -s.val_today,  # топ по ликвидности, а не по алфавиту
+    )[:120]
     figi_map: dict[str, str] = {}
     tinvest = None
     if settings.tinvest_token:
@@ -130,17 +131,21 @@ def sync_shares(client: MoexClient, db) -> int:
     log.info("Fetching dividends for %d shares...", len(targets))
     ok = 0
     for share in targets:
-        try:
-            figi = figi_map.get(share.secid)
-            if tinvest and figi:
+        rows = None
+        figi = figi_map.get(share.secid)
+        if tinvest and figi:
+            try:
                 rows = tinvest.dividends(figi)
                 time.sleep(0.15)
-            else:
+            except Exception:
+                log.warning("T-Invest failed for %s, trying Smart-Lab", share.secid)
+        if rows is None:
+            try:
                 rows = client.get_dividends(share.secid)
                 time.sleep(0.25)  # не ддосим smart-lab
-        except Exception:
-            log.warning("Dividends fetch failed for %s", share.secid)
-            continue
+            except Exception:
+                log.warning("Dividends fetch failed for %s", share.secid)
+                continue
         ok += 1
         for d in rows:
             db.add(Dividend(
