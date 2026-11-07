@@ -96,6 +96,7 @@ certbot --nginx -d fin.example.com
 | GET | `/api/my/accounts` | Счета Т-Банка (нужен FIN_TINVEST_TOKEN) |
 | GET | `/api/my/portfolio?account_id=` | Реальные позиции по счёту |
 | GET | `/api/my/income?account_id=&days=45` | Календарь купонов и дивидендов |
+| GET | `/api/index/imoex` | Актуальный состав и веса индекса IMOEX |
 
 Документация FastAPI: `/docs`.
 

@@ -100,6 +100,13 @@ class MoexClient:
 
         return fetch_dividends(secid)
 
+    def get_index_analytics(self, index_id: str = "IMOEX", limit: int = 100) -> list[dict]:
+        """Состав индекса с весами (index analytics). weight уже в процентах (17.03 = 17.03%)."""
+        url = f"{self.base}/statistics/engines/stock/markets/index/analytics/{index_id}.json"
+        return _fetch_block(url, "analytics",
+                            "ticker,shortnames,weight,tradedate",
+                            {"limit": limit})
+
     def get_key_rate(self) -> float | None:
         """Ключевая ставка ЦБ: ставка стояния по 1-дневному прямому РЕПО (state/rates, блок fixed)."""
         url = f"{self.base}/statistics/engines/state/rates.json"

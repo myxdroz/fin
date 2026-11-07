@@ -41,3 +41,18 @@ def shares(f: ShareFilter, db: Session = Depends(get_db)):
 @router.post("/portfolio")
 def portfolio(req: PortfolioRequest, db: Session = Depends(get_db)):
     return build_portfolio(db, req)
+
+
+@router.get("/index/imoex")
+def index_imoex(db: Session = Depends(get_db)):
+    """Актуальный состав индекса IMOEX с весами (обновляется при синхронизации)."""
+    from ..models import IndexWeight
+    from sqlalchemy import select
+
+    rows = db.scalars(select(IndexWeight)).all()
+    items = [
+        {"secid": w.secid, "shortname": w.shortname,
+         "weight": round(w.weight, 2), "tradedate": w.tradedate.isoformat() if w.tradedate else None}
+        for w in sorted(rows, key=lambda x: -x.weight)
+    ]
+    return {"index": "IMOEX", "count": len(items), "items": items}

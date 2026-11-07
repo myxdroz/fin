@@ -8,7 +8,7 @@ from sqlalchemy import delete
 
 from ..config import settings
 from ..database import SessionLocal
-from ..models import Bond, Dividend, Share
+from ..models import Bond, Dividend, IndexWeight, Share
 from .client import BOND_BOARDS, SHARE_BOARDS, MoexClient
 
 log = logging.getLogger(__name__)
@@ -161,16 +161,33 @@ def sync_shares(client: MoexClient, db) -> int:
     return len(best)
 
 
+def sync_index_weights(client: MoexClient, db) -> int:
+    """Состав и веса индекса IMOEX — для профиля «Голубые фишки»."""
+    rows = client.get_index_analytics("IMOEX")
+    db.execute(delete(IndexWeight))
+    for r in rows:
+        db.add(IndexWeight(
+            secid=r.get("ticker") or "",
+            shortname=str(r.get("shortnames") or ""),
+            weight=_num(r.get("weight")),  # уже в процентах (17.03 = 17.03%)
+            tradedate=_parse_date(r.get("tradedate")),
+        ))
+    db.commit()
+    return len(rows)
+
+
 def sync_all() -> dict:
     client = MoexClient()
     db = SessionLocal()
     try:
         bonds = sync_bonds(client, db)
         shares = sync_shares(client, db)
+        index_n = sync_index_weights(client, db)
         key_rate = client.get_key_rate()
         if key_rate:
             settings.key_rate = key_rate
-        log.info("Sync done: %d bonds, %d shares, key_rate=%s", bonds, shares, key_rate)
-        return {"bonds": bonds, "shares": shares, "key_rate": key_rate}
+        log.info("Sync done: %d bonds, %d shares, %d index weights, key_rate=%s",
+                 bonds, shares, index_n, key_rate)
+        return {"bonds": bonds, "shares": shares, "index": index_n, "key_rate": key_rate}
     finally:
         db.close()

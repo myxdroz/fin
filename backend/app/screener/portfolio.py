@@ -10,8 +10,11 @@
 import re
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..models import IndexWeight
 from .filters import BondFilter, ShareFilter, screen_bonds, screen_shares
 
 PROFILES = {
@@ -151,9 +154,17 @@ def _pick_shares(db, cfg: dict, amount: float, target: float) -> list[dict]:
         limit=100 if cfg.get("blue_chips") else cfg["share_limit"] * 3,
     )
     candidates = screen_shares(db, f)
-    if cfg.get("blue_chips"):
+    imoex = {
+        w.secid: w.weight
+        for w in db.scalars(select(IndexWeight)).all()
+    }
+    if cfg.get("blue_chips") and imoex:
+        # голубые фишки = актуальный состав IMOEX, сортировка по весу в индексе
+        candidates = [s for s in candidates if imoex.get(s["secid"], 0) > 0]
+        candidates.sort(key=lambda x: -imoex.get(x["secid"], 0))
+    elif cfg.get("blue_chips"):
         candidates = [s for s in candidates if s["secid"] in BLUE_CHIPS]
-        candidates.sort(key=lambda x: -x["val_today"])  # голубые фишки — по ликвидности
+        candidates.sort(key=lambda x: -x["val_today"])
     # Позиций ровно столько, чтобы на каждую хватило хотя бы на один лот
     n = min(cfg["share_limit"], len(candidates))
     picked: list[dict] = []
@@ -162,7 +173,22 @@ def _pick_shares(db, cfg: dict, amount: float, target: float) -> list[dict]:
         if all(s["lot_cost"] <= target / n for s in picked):
             break
         n -= 1
-    if picked:
+    if cfg.get("blue_chips") and imoex and picked:
+        # доли пропорциональны весам в индексе; бумаги, на которые не хватает
+        # даже на один лот, отбрасываем с пересчётом долей
+        while len(picked) > 1:
+            wsum = sum(imoex.get(s["secid"], 0) for s in picked) or 1
+            poor = [s for s in picked if target * imoex.get(s["secid"], 0) / wsum < s["lot_cost"]]
+            if not poor:
+                break
+            picked.remove(poor[0])
+        wsum = sum(imoex.get(s["secid"], 0) for s in picked) or 1
+        for s in picked:
+            s["imoex_weight"] = round(imoex.get(s["secid"], 0), 2)
+            s["weight"] = round(imoex.get(s["secid"], 0) / wsum * 100, 1)
+            s["amount"] = round(target * s["weight"] / 100, 0)
+            s["approx_qty"] = int(s["amount"] // s["lot_cost"]) * s["lot_size"]
+    elif picked:
         for s in picked:
             s["weight"] = round(100 / len(picked), 1)
             s["amount"] = round(target / len(picked), 0)

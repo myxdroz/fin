@@ -64,3 +64,14 @@ class Dividend(Base):
     currency: Mapped[str] = mapped_column(String(10), default="SUR")
 
     __table_args__ = ({"sqlite_autoincrement": True},)
+
+
+class IndexWeight(Base):
+    """Состав индекса IMOEX: веса компонентов (MOEX index analytics)."""
+
+    __tablename__ = "index_weights"
+
+    secid: Mapped[str] = mapped_column(String(20), primary_key=True)
+    shortname: Mapped[str] = mapped_column(String(120), default="")
+    weight: Mapped[float] = mapped_column(Float, default=0)  # % от индекса
+    tradedate: Mapped[date | None] = mapped_column(Date, nullable=True)

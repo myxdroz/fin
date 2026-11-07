@@ -175,10 +175,11 @@ function renderPortfolio(r) {
       <td class="num">${fmt(b.duration_years, 1)}</td>
       <td>${b.mat_date || "—"}</td>
     </tr>`).join("");
-  const shareRows = r.shares.map(s => `
+    const shareRows = r.shares.map(s => `
     <tr>
       <td><a href="${moexLink(s.secid)}" target="_blank">${s.secid}</a><br>
-          <span class="muted">${s.shortname}</span></td>
+          <span class="muted">${s.shortname}</span>
+          ${s.imoex_weight != null ? `<span class="badge">IMOEX ${s.imoex_weight}%</span>` : ""}</td>
       <td class="num">${s.weight}%</td>
       <td class="num">${fmt(s.amount, 0)}</td>
       <td class="num">${s.approx_qty}</td>
