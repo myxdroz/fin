@@ -54,6 +54,7 @@ button:hover { filter: brightness(1.1); }
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; background: var(--panel); border-radius: 10px; overflow: hidden; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+th.num { text-align: right; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr:hover td { background: #20293d; }
 a { color: var(--accent); text-decoration: none; }

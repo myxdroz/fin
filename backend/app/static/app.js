@@ -195,11 +195,12 @@ function renderPortfolio(r) {
       <div class="stat"><div class="v">${fmt(r.key_rate, 1)}%</div><div class="k">Ключевая ставка ЦБ (бенчмарк)</div></div>
     </div>
     ${r.bonds.length ? `<h3>Облигации (${r.bonds.length})</h3>
-    <table><thead><tr><th>Бумага</th><th>Доля</th><th>Сумма, ₽</th><th>Кол-во</th><th>Доходн., %</th><th>Дюрация, лет</th><th>Погашение</th></tr></thead>
+    <table><thead><tr><th>Бумага</th><th class="num" title="Доля внутри облигационной части портфеля">Доля*</th><th class="num">Сумма, ₽</th><th class="num">Кол-во</th><th class="num">Доходн., %</th><th class="num">Дюрация, лет</th><th>Погашение</th></tr></thead>
     <tbody>${bondRows}</tbody></table>` : ""}
     ${r.shares.length ? `<h3>Акции (${r.shares.length})</h3>
-    <table><thead><tr><th>Бумага</th><th>Доля</th><th>Сумма, ₽</th><th>Кол-во</th><th>Цена, ₽</th><th>Див. доходн., %</th></tr></thead>
-    <tbody>${shareRows}</tbody></table>` : ""}
+    <table><thead><tr><th>Бумага</th><th class="num" title="Доля внутри акционной части портфеля">Доля*</th><th class="num">Сумма, ₽</th><th class="num">Кол-во</th><th class="num">Цена, ₽</th><th class="num">Див. доходн., %</th></tr></thead>
+    <tbody>${shareRows}</tbody></table>
+    <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${r.bonds.length ? fmt(r.bonds[0].amount * r.bonds.length / r.amount * 100, 0) : 0}% / акции ${r.shares.length ? fmt(r.shares[0].amount * r.shares.length / r.amount * 100, 0) : 0}% от ${fmt(r.amount, 0)} ₽.</p>` : ""}
     <p class="muted" style="margin-top:14px">${r.disclaimer}</p>`;
 }
 
