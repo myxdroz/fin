@@ -104,6 +104,7 @@ certbot --nginx -d fin.example.com
 | `FIN_SYNC_ON_STARTUP` | `true` | Синхронизация при старте |
 | `FIN_SCHEDULER_ENABLED` | `true` | Ежедневная авто-синхронизация |
 | `FIN_KEY_RATE` | `15.0` | Запасная ключевая ставка (авто из MOEX) |
+| `FIN_TINVEST_TOKEN` | — | Токен T-Invest API (read-only). Задан — дивиденды официально от Т-Банка; не задан — парсинг Smart-Lab |
 
 ## Дисклеймер
 

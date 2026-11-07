@@ -11,7 +11,9 @@ services:
       FIN_SYNC_ON_STARTUP: "true"
       FIN_SCHEDULER_ENABLED: "true"
       # ключевая ставка как запасной вариант, если MOEX её не отдаст
-      FIN_KEY_RATE: "21.0"
+      FIN_KEY_RATE: "15.0"
+      # опционально: токен T-Invest API (read-only) для официальных данных по дивидендам
+      FIN_TINVEST_TOKEN: "${FIN_TINVEST_TOKEN:-}"
 
 volumes:
   fin-data:

@@ -111,14 +111,33 @@ def sync_shares(client: MoexClient, db) -> int:
     db.add_all(share_objs)
     db.commit()
 
-    # Дивиденды только для акций первого эшелона с ненулевой ценой (экономим запросы)
+    # Дивиденды: T-Invest API (официально), при отсутствии токена — Smart-Lab
     db.execute(delete(Dividend))
     targets = [s for s in share_objs if s.list_level == 1 and s.last_price > 0][:120]
+    figi_map: dict[str, str] = {}
+    tinvest = None
+    if settings.tinvest_token:
+        try:
+            from .tinvest import TInvestDividends
+
+            tinvest = TInvestDividends(settings.tinvest_token)
+            figi_map = tinvest.shares_figi()
+            log.info("T-Invest: figi получены для %d акций", len(figi_map))
+        except Exception:
+            log.exception("T-Invest API недоступен, откатываемся на Smart-Lab")
+            tinvest = None
+
     log.info("Fetching dividends for %d shares...", len(targets))
     ok = 0
     for share in targets:
         try:
-            rows = client.get_dividends(share.secid)
+            figi = figi_map.get(share.secid)
+            if tinvest and figi:
+                rows = tinvest.dividends(figi)
+                time.sleep(0.15)
+            else:
+                rows = client.get_dividends(share.secid)
+                time.sleep(0.25)  # не ддосим smart-lab
         except Exception:
             log.warning("Dividends fetch failed for %s", share.secid)
             continue
@@ -128,10 +147,11 @@ def sync_shares(client: MoexClient, db) -> int:
                 secid=share.secid,
                 ex_date=d["ex_date"],
                 value=d["value"],
-                currency="SUR",
+                currency=d.get("currency", "SUR"),
             ))
-        time.sleep(0.25)  # не ддосим smart-lab
     db.commit()
+    if tinvest:
+        tinvest.close()
     log.info("Dividends fetched for %d/%d shares", ok, len(targets))
     return len(best)
 
