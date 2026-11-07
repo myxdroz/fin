@@ -15,7 +15,7 @@ ENV FIN_DATABASE_URL=sqlite:////data/fin.db \
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=120s \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
   CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health', timeout=5).raise_for_status()"
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

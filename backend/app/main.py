@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -27,7 +28,9 @@ def _initial_sync():
 async def lifespan(app: FastAPI):
     init_db()
     if settings.sync_on_startup:
-        _initial_sync()
+        # синхронизация в фоне: сервер начинает отвечать сразу,
+        # данные подтягиваются за 3–4 минуты
+        threading.Thread(target=_initial_sync, daemon=True).start()
     scheduler = None
     if settings.scheduler_enabled:
         scheduler = BackgroundScheduler()
