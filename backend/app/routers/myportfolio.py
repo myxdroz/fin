@@ -3,9 +3,12 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..database import get_db
 from ..moex.tinvest import TInvestDividends
 
 log = logging.getLogger(__name__)
@@ -104,3 +107,49 @@ def get_income(account_id: str = Query(...), days: int = Query(45, le=90)):
         return {"events": events, "total": round(sum(e["amount"] for e in events), 0)}
     finally:
         t.close()
+
+
+@router.get("/taxes")
+def get_taxes(account_id: str = Query(...)):
+    """НДФЛ с инвестиционного дохода + подсказки по ИИС."""
+    t = _client()
+    try:
+        pf = t.portfolio(account_id)
+        figi_map = t.instruments_by_figi()
+        annual = 0.0
+        for p in pf["positions"]:
+            if p["quantity"] <= 0 or p["type"] not in ("bond", "share"):
+                continue
+            try:
+                if p["type"] == "bond":
+                    annual += sum(c["value"] for c in t.bond_coupons(p["figi"], 365)) * p["quantity"]
+                else:
+                    annual += sum(d["value"] for d in t.dividends(p["figi"], years=1)) * p["quantity"]
+            except Exception:
+                log.warning("Tax calc failed for %s", p["figi"])
+        annual = round(annual, 0)
+        # прогрессивная шкала 2025: 13% до 2.4 млн, 15% свыше
+        low = min(annual, 2_400_000)
+        high = max(annual - 2_400_000, 0)
+        tax = round(low * 0.13 + high * 0.15, 0)
+        return {
+            "annual_income": annual,
+            "ndfl_13_base": round(low, 0),
+            "ndfl_15_base": round(high, 0),
+            "tax_est": tax,
+            "iis_a_hint": "ИИС типа А: вычет 13% с пополнений (максимум 52 000 ₽/год при взносе 400 000 ₽)",
+            "iis_b_hint": "ИИС типа Б: освобождение от НДФЛ с дохода по счёту при закрытии",
+        }
+    finally:
+        t.close()
+
+
+@router.get("/history")
+def get_history(db: Session = Depends(get_db)):
+    """История стоимости портфеля (ежедневные снимки после синхронизации)."""
+    from ..models import PortfolioSnapshot
+
+    rows = db.scalars(select(PortfolioSnapshot).order_by(PortfolioSnapshot.date)).all()
+    return {"points": [
+        {"date": r.date.isoformat(), "total": r.total, "cash": r.cash} for r in rows
+    ]}

@@ -22,7 +22,7 @@ MIN_DIFF_RUB = 500
 
 
 class StrategyIn(BaseModel):
-    profile: str = Field(pattern="^(conservative|moderate|aggressive|bluechips)$")
+    profile: str = Field(pattern="^(conservative|moderate|aggressive|bluechips|monthly)$")
     amount: float = Field(gt=0)
 
 

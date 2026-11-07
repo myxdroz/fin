@@ -148,6 +148,7 @@ function renderShares(items) {
 }
 
 // --- портфель ---
+let lastPortfolio = null;
 $("#portfolioForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -157,6 +158,7 @@ $("#portfolioForm").addEventListener("submit", async (e) => {
       profile: f.get("profile"),
       amount: +f.get("amount"),
     });
+    lastPortfolio = r;
     renderPortfolio(r);
   } catch (err) {
     $("#portfolioResult").innerHTML = `<p class="muted">Ошибка: ${err.message}</p>`;
@@ -201,7 +203,8 @@ function renderPortfolio(r) {
     <table><thead><tr><th>Бумага</th><th class="num" title="Доля внутри акционной части портфеля">Доля*</th><th class="num">Сумма, ₽</th><th class="num">Кол-во</th><th class="num">Цена, ₽</th><th class="num">Див. доходн., %</th></tr></thead>
     <tbody>${shareRows}</tbody></table>
     <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${r.bonds.length ? fmt(r.bonds[0].amount * r.bonds.length / r.amount * 100, 0) : 0}% / акции ${r.shares.length ? fmt(r.shares[0].amount * r.shares.length / r.amount * 100, 0) : 0}% от ${fmt(r.amount, 0)} ₽.</p>` : ""}
-    <p class="muted" style="margin-top:14px">${r.disclaimer}</p>`;
+    <p class="muted" style="margin-top:14px">${r.disclaimer}</p>
+    <button class="btn-secondary" onclick="exportPortfolioCSV()">Экспорт CSV</button>`;
 }
 
 // --- мой портфель (Т-Банк) ---
@@ -268,6 +271,7 @@ function renderMyPortfolio(pf) {
       <td class="num ${p.pnl >= 0 ? "yield" : ""}">${fmt(p.pnl, 0)} (${fmt(p.pnl_pct, 1)}%)</td>
     </tr>`).join("");
   $("#myPortfolioResult").innerHTML = `
+    <div id="myStrategyBanner" style="margin-bottom:12px"></div>
     <div class="summary">
       <div class="stat"><div class="v">${fmt(pf.total, 0)} ₽</div><div class="k">Стоимость портфеля</div></div>
       <div class="stat"><div class="v">${fmt(pf.total_shares, 0)} ₽</div><div class="k">Акции</div></div>
@@ -280,7 +284,9 @@ function renderMyPortfolio(pf) {
       <th>Бумага</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость, ₽</th><th>Доля</th><th>P&L</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div id="rebalanceBox" style="margin-top:22px"></div>
-    <div id="incomeCalendar"></div>`;
+    <div id="incomeCalendar"></div>
+    <div id="taxesBox" style="margin-top:22px"></div>
+    <div id="historyBox" style="margin-top:22px"></div>`;
 }
 
 function renderIncome(cal) {
@@ -420,10 +426,10 @@ async function saveStrategy() {
     body: JSON.stringify({ profile: f.get("profile"), amount: +f.get("amount") }),
   });
   if (res.ok) {
-    $("#strategyStatus").textContent = "Стратегия сохранена ✓";
-    setTimeout(loadStrategyStatus, 1500);
+    showToast("Стратегия сохранена ✓");
+    setTimeout(loadStrategyStatus, 500);
   } else {
-    $("#strategyStatus").textContent = "Ошибка сохранения";
+    showToast("Ошибка сохранения стратегии", true);
   }
 }
 
@@ -457,4 +463,106 @@ async function loadRebalance() {
     <tbody>${rows}</tbody></table>
     <p class="muted" style="margin-top:10px">Итого: купить на ${fmt(r.buy_total, 0)} ₽, продать на ${fmt(r.sell_total, 0)} ₽</p>
     ${repl}`;
+}
+
+// --- всплывающие сообщения ---
+function showToast(msg, isError = false) {
+  let el = $(".toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.className = "toast show" + (isError ? " error" : "");
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+
+// --- упоминание стратегии в «Моём портфеле» + налоги + история ---
+const _origLoadMyPortfolio = loadMyPortfolio;
+loadMyPortfolio = async function () {
+  await _origLoadMyPortfolio();
+  // баннер стратегии
+  try {
+    const r = await (await fetch("/api/strategy")).json();
+    const banner = $("#myStrategyBanner");
+    if (r.strategy) {
+      banner.innerHTML = `Применена стратегия: <b>${r.strategy.profile_label}</b>, ` +
+        `${fmt(r.strategy.amount, 0)} ₽ <span class="muted">(сохранена ${r.strategy.updated_at.slice(0, 10)})</span>`;
+    } else {
+      banner.innerHTML = `<span class="muted">Стратегия не сохранена. Задайте её на вкладке «Портфель» — тогда здесь появится ребалансировка.</span>`;
+    }
+  } catch { /* не критично */ }
+  loadTaxes();
+  loadHistory();
+};
+
+async function loadTaxes() {
+  const box = $("#taxesBox");
+  if (!myAccountId || !box) return;
+  try {
+    const res = await fetch(`/api/my/taxes?account_id=${myAccountId}`);
+    if (!res.ok) return;
+    const t = await res.json();
+    if (!t.annual_income) {
+      box.innerHTML = "<p class='muted'>Налоги: купонов и дивидендов за год пока нет.</p>";
+      return;
+    }
+    box.innerHTML = `
+      <h3>Налоги</h3>
+      <p>Ожидаемый доход за 12 мес: <b>${fmt(t.annual_income, 0)} ₽</b>,
+         НДФЛ (~13%${t.ndfl_15_base ? " + 15% свыше 2.4 млн" : ""}): <b>${fmt(t.tax_est, 0)} ₽</b></p>
+      <p class="muted">${t.iis_a_hint}. ${t.iis_b_hint}.</p>`;
+  } catch { /* не критично */ }
+}
+
+async function loadHistory() {
+  const box = $("#historyBox");
+  if (!box) return;
+  try {
+    const r = await (await fetch("/api/my/history")).json();
+    if (r.points.length < 2) {
+      box.innerHTML = "<p class='muted'>График стоимости появится после нескольких дней синхронизации.</p>";
+      return;
+    }
+    renderHistoryChart(r.points);
+  } catch { /* не критично */ }
+}
+
+function renderHistoryChart(points) {
+  const W = 640, H = 180, pad = 34;
+  const vals = points.map(p => p.total);
+  const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
+  const x = i => pad + i * (W - 2 * pad) / Math.max(points.length - 1, 1);
+  const y = v => H - pad - (v - min) / span * (H - 2 * pad);
+  const line = points.map((p, i) => `${x(i).toFixed(1)},${y(p.total).toFixed(1)}`).join(" ");
+  const area = `${pad},${H - pad} ${line} ${x(points.length - 1).toFixed(1)},${H - pad}`;
+  $("#historyBox").innerHTML = `
+    <h3>Стоимость портфеля</h3>
+    <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="max-width:100%">
+      <polygon points="${area}" fill="rgba(59,130,246,.12)"></polygon>
+      <polyline points="${line}" fill="none" stroke="#3b82f6" stroke-width="2"></polyline>
+      <text x="${pad}" y="${y(max) - 8}" fill="#8b95a9" font-size="11">${fmt(max, 0)} ₽</text>
+      <text x="${pad}" y="${H - pad + 14}" fill="#8b95a9" font-size="11">${fmt(min, 0)} ₽</text>
+      <text x="${W - pad}" y="${H - 6}" text-anchor="end" fill="#8b95a9" font-size="11">${points[points.length - 1].date}</text>
+      <text x="${pad}" y="${H - 6}" fill="#8b95a9" font-size="11">${points[0].date}</text>
+    </svg>`;
+}
+
+// --- экспорт подборки в CSV ---
+function exportPortfolioCSV() {
+  if (!lastPortfolio) { showToast("Сначала подберите портфель", true); return; }
+  const r = lastPortfolio;
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [["Класс", "Тикер", "Название", "Доля %", "Сумма руб", "Количество", "Доходность %"]];
+  for (const b of r.bonds) lines.push(["Облигация", b.secid, b.shortname, b.weight, b.amount, b.approx_qty, b.yield]);
+  for (const s of r.shares) lines.push(["Акция", s.secid, s.shortname, s.weight, s.amount, s.approx_qty, s.div_yield_12m]);
+  const csv = "﻿" + lines.map(l => l.map(esc).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `portfolio_${r.profile}_${r.amount}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast("CSV выгружен");
 }

@@ -97,6 +97,10 @@ certbot --nginx -d fin.example.com
 | GET | `/api/my/portfolio?account_id=` | Реальные позиции по счёту |
 | GET | `/api/my/income?account_id=&days=45` | Календарь купонов и дивидендов |
 | GET | `/api/index/imoex` | Актуальный состав и веса индекса IMOEX |
+| GET/PUT | `/api/strategy` | Сохранённая стратегия (профиль + сумма) |
+| GET | `/api/my/rebalance` | Ребалансировка: что купить/продать против стратегии |
+| GET | `/api/my/taxes` | НДФЛ с инвестдохода + подсказки по ИИС |
+| GET | `/api/my/history` | История стоимости портфеля (ежедневные снимки) |
 
 Документация FastAPI: `/docs`.
 
@@ -109,6 +113,8 @@ certbot --nginx -d fin.example.com
 | `FIN_SCHEDULER_ENABLED` | `true` | Ежедневная авто-синхронизация |
 | `FIN_KEY_RATE` | `15.0` | Запасная ключевая ставка (авто из MOEX) |
 | `FIN_TINVEST_TOKEN` | — | Токен T-Invest API (read-only). Задан — дивиденды официально от Т-Банка; не задан — парсинг Smart-Lab |
+| `FIN_TELEGRAM_TOKEN` / `FIN_TELEGRAM_CHAT` | — | Токен бота и chat_id для уведомлений (пусто = выключены) |
+| `FIN_NOTIFY_BOND_PREMIUM` | `8.0` | Алерт про облигации: ключевая ставка + N п.п. |
 
 ## Дисклеймер
 

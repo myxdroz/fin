@@ -98,3 +98,16 @@ class Strategy(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = ({"sqlite_autoincrement": True},)
+
+
+class PortfolioSnapshot(Base):
+    """Ежедневная история стоимости реального портфеля (для графика)."""
+
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[date] = mapped_column(Date, unique=True)
+    total: Mapped[float] = mapped_column(Float, default=0)
+    cash: Mapped[float] = mapped_column(Float, default=0)
+
+    __table_args__ = ({"sqlite_autoincrement": True},)

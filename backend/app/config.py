@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     sync_minute_utc: int = 0
     key_rate: float = 15.0  # запасное значение; обновляется автоматически из MOEX
     tinvest_token: str = ""  # T-Invest API read-only токен; пусто = дивиденды со Smart-Lab
+    # Telegram-уведомления (пусто = выключены)
+    telegram_token: str = ""
+    telegram_chat: str = ""
+    # порог для алерта «высокодоходная облигация»: ставка + N п.п.
+    notify_bond_premium: float = 8.0
 
 
 settings = Settings()

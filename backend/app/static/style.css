@@ -84,3 +84,12 @@ footer { margin-top: 36px; color: var(--muted); font-size: 12px; border-top: 1px
 .badge.buy { background: #14532d; color: #4ade80; }
 .badge.sell { background: #7f1d1d; color: #f87171; }
 .badge.hold { background: #2a3550; color: var(--muted); }
+
+.toast {
+  position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%);
+  background: #14532d; color: #4ade80; padding: 13px 26px; border-radius: 9px;
+  font-size: 14.5px; z-index: 100; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  opacity: 0; transition: opacity .25s; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+.toast.error { background: #7f1d1d; color: #f87171; }

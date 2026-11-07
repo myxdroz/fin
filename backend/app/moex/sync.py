@@ -4,7 +4,7 @@ import logging
 import time
 from datetime import date, datetime
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from ..config import settings
 from ..database import SessionLocal
@@ -176,6 +176,39 @@ def sync_index_weights(client: MoexClient, db) -> int:
     return len(rows)
 
 
+def _snapshot_portfolio(db) -> None:
+    """Ежедневный снимок стоимости реального портфеля (для графика истории)."""
+    if not settings.tinvest_token:
+        return
+    try:
+        from ..models import PortfolioSnapshot
+        from .tinvest import TInvestDividends
+
+        t = TInvestDividends(settings.tinvest_token)
+        try:
+            accounts = t.accounts()
+            if not accounts:
+                return
+            pf = t.portfolio(accounts[0]["id"])
+        finally:
+            t.close()
+        today = date.today()
+        row = db.scalars(
+            select(PortfolioSnapshot).where(PortfolioSnapshot.date == today)
+        ).first()
+        cash = sum(
+            p["current_price"] * p["quantity"]
+            for p in pf["positions"] if p["type"] == "currency"
+        )
+        if row:
+            row.total, row.cash = pf["total"], cash
+        else:
+            db.add(PortfolioSnapshot(date=today, total=pf["total"], cash=cash))
+        db.commit()
+    except Exception:
+        log.warning("Portfolio snapshot failed", exc_info=True)
+
+
 def sync_all() -> dict:
     client = MoexClient()
     db = SessionLocal()
@@ -186,8 +219,12 @@ def sync_all() -> dict:
         key_rate = client.get_key_rate()
         if key_rate:
             settings.key_rate = key_rate
+        _snapshot_portfolio(db)
         log.info("Sync done: %d bonds, %d shares, %d index weights, key_rate=%s",
                  bonds, shares, index_n, key_rate)
-        return {"bonds": bonds, "shares": shares, "index": index_n, "key_rate": key_rate}
+        result = {"bonds": bonds, "shares": shares, "index": index_n, "key_rate": key_rate}
+        from ..notify import maybe_notify
+        maybe_notify(db)
+        return result
     finally:
         db.close()

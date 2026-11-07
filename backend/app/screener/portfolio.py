@@ -50,6 +50,14 @@ PROFILES = {
         "description": "80% акций голубых фишек МосБиржи (Сбер, Лукойл, Газпром, Новатэк…) "
                        "+ 20% короткие облигации 1 уровня. Максимальная ликвидность, горизонт — от 3 лет.",
     },
+    "monthly": {
+        "label": "Ежемесячный доход",
+        "bond_share": 0.85, "share_share": 0.15,
+        "max_duration": 1825, "bond_limit": 8, "share_limit": 3,
+        "max_price": 104.0, "only_quality": True, "monthly_coupon": True,
+        "description": "Облигации с ежемесячным купоном (выплаты каждый месяц) + дивидендные "
+                       "акции. Цель — стабильный кешфлоу, а не рост капитала.",
+    },
 }
 
 # Наиболее ликвидные бумаги первого эшелона — состав ориентировочный
@@ -61,7 +69,7 @@ BLUE_CHIPS = frozenset({
 
 
 class PortfolioRequest(BaseModel):
-    profile: str = Field(pattern="^(conservative|moderate|aggressive|bluechips)$")
+    profile: str = Field(pattern="^(conservative|moderate|aggressive|bluechips|monthly)$")
     amount: float = Field(gt=0, description="Сумма портфеля, руб")
 
 
@@ -85,6 +93,7 @@ def _pick_bonds(db, cfg: dict, amount: float, target: float) -> list[dict]:
         list_level=1 if quality else 3,
         exclude_floating=True,
         exclude_amort=True,
+        monthly_coupon=bool(cfg.get("monthly_coupon")),
         max_price=cfg["max_price"],
         limit=300,
     )
