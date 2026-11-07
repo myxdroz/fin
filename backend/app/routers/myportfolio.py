@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..database import get_db
-from ..moex.tinvest import TInvestDividends
+from ..moex.tinvest import TInvestDividends, _money
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/my", tags=["my"])
@@ -153,3 +153,97 @@ def get_history(db: Session = Depends(get_db)):
     return {"points": [
         {"date": r.date.isoformat(), "total": r.total, "cash": r.cash} for r in rows
     ]}
+
+
+@router.get("/lots")
+def get_lots(account_id: str = Query(...)):
+    """Разбивка позиций на лоты: каждая покупка с датой и ценой, P&L лота сейчас.
+
+    Продажи вычитаются из самых старых лотов (FIFO).
+    """
+    t = _client()
+    try:
+        pf = t.portfolio(account_id)
+        figi_map = t.instruments_by_figi()
+        current = {p["figi"]: p["current_price"] for p in pf["positions"]}
+
+        # вся история операций с 2021 года, с пагинацией
+        ops = []
+        cursor = ""
+        while True:
+            d = t._post("operations", "GetOperationsByCursor", {
+                "accountId": account_id,
+                "from": "2021-01-01T00:00:00Z",
+                "to": date.today().isoformat() + "T23:59:59Z",
+                "cursor": cursor, "limit": 1000,
+                "state": "OPERATION_STATE_EXECUTED",
+            })
+            items = d.get("items", [])
+            ops.extend(items)
+            nxt = d.get("nextCursor", "")
+            if not items or not nxt or nxt == cursor:
+                break
+            cursor = nxt
+
+        # очередь покупок по каждому figi, вычет продаж FIFO
+        from collections import deque
+
+        lots: dict[str, deque] = {}
+        REDUCE_TYPES = ("OPERATION_TYPE_SELL", "OPERATION_TYPE_BOND_REPAYMENT",
+                        "OPERATION_TYPE_AMORTIZATION")
+        for op in sorted(ops, key=lambda o: o.get("date", "")):
+            figi = op.get("figi", "")
+            if not figi or op.get("instrumentType") not in ("share", "bond", "etf"):
+                continue
+            qty = _money(op.get("quantity", {}))
+            price = _money(op.get("price", {}))
+            if op.get("type") == "OPERATION_TYPE_BUY" and qty > 0 and price > 0:
+                lots.setdefault(figi, deque()).append(
+                    {"date": op["date"][:10], "price": price, "qty": qty})
+            elif op.get("type") in REDUCE_TYPES and qty > 0:
+                queue = lots.setdefault(figi, deque())
+                rest = qty
+                while rest > 0 and queue:
+                    lot = queue[0]
+                    take = min(lot["qty"], rest)
+                    lot["qty"] -= take
+                    rest -= take
+                    if lot["qty"] <= 1e-9:
+                        queue.popleft()
+                if rest > 0:
+                    queue.clear()  # продали больше, чем видно в истории
+
+        # показываем только то, что реально есть в портфеле сейчас
+        positions = []
+        for figi, queue in lots.items():
+            if not queue or figi not in current or current[figi] <= 0:
+                continue
+            info = figi_map.get(figi, {})
+            cur = current.get(figi, 0)
+            lot_rows = []
+            total_qty = 0
+            total_invested = 0.0
+            for lot in queue:
+                invested = lot["price"] * lot["qty"]
+                total_qty += lot["qty"]
+                total_invested += invested
+                lot_rows.append({
+                    "date": lot["date"],
+                    "price": round(lot["price"], 4),
+                    "qty": round(lot["qty"], 4),
+                    "invested": round(invested, 0),
+                    "pnl_pct": round((cur / lot["price"] - 1) * 100, 1) if lot["price"] and cur else None,
+                })
+            positions.append({
+                "ticker": info.get("ticker", ""),
+                "name": info.get("name", ""),
+                "current_price": cur,
+                "total_qty": round(total_qty, 4),
+                "total_invested": round(total_invested, 0),
+                "avg_price": round(total_invested / total_qty, 4) if total_qty else 0,
+                "lots": lot_rows,
+            })
+        positions.sort(key=lambda p: -p["total_invested"])
+        return {"positions": positions}
+    finally:
+        t.close()

@@ -29,7 +29,12 @@ def _iso(d: date) -> str:
     return datetime(d.year, d.month, d.day, tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _money(m: dict) -> float:
+def _money(m) -> float:
+    if not isinstance(m, dict):
+        try:
+            return float(m)
+        except (TypeError, ValueError):
+            return 0.0
     try:
         return int(m.get("units", 0)) + int(m.get("nano", 0)) / 1e9
     except (TypeError, ValueError):

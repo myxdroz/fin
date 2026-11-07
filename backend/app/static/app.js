@@ -286,7 +286,8 @@ function renderMyPortfolio(pf) {
     <div id="rebalanceBox" style="margin-top:22px"></div>
     <div id="incomeCalendar"></div>
     <div id="taxesBox" style="margin-top:22px"></div>
-    <div id="historyBox" style="margin-top:22px"></div>`;
+    <div id="historyBox" style="margin-top:22px"></div>
+    <div id="lotsBox" style="margin-top:22px"></div>`;
 }
 
 function renderIncome(cal) {
@@ -496,6 +497,7 @@ loadMyPortfolio = async function () {
   } catch { /* не критично */ }
   loadTaxes();
   loadHistory();
+  loadLots();
 };
 
 async function loadTaxes() {
@@ -565,4 +567,37 @@ function exportPortfolioCSV() {
   a.click();
   URL.revokeObjectURL(a.href);
   showToast("CSV выгружен");
+}
+
+// --- лоты: история покупок по ценам ---
+async function loadLots() {
+  const box = $("#lotsBox");
+  if (!myAccountId || !box) return;
+  try {
+    const res = await fetch(`/api/my/lots?account_id=${myAccountId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (!d.positions.length) {
+      box.innerHTML = "";
+      return;
+    }
+    const rows = d.positions.flatMap(p =>
+      p.lots.map(l => `
+      <tr>
+        <td><b>${p.ticker}</b><br><span class="muted">${p.name}</span></td>
+        <td>${l.date}</td>
+        <td class="num">${fmt(l.price, 2)}</td>
+        <td class="num">${l.qty}</td>
+        <td class="num">${fmt(l.invested, 0)}</td>
+        <td class="num ${l.pnl_pct >= 0 ? "yield" : ""}">${l.pnl_pct == null ? "—" : fmt(l.pnl_pct, 1) + "%"}</td>
+      </tr>`)).join("");
+    box.innerHTML = `
+      <h3>История покупок (лоты)</h3>
+      <p class="muted">Каждая покупка отдельно: цена лота и результат, если продать сейчас.
+         Продажи учтены по FIFO (вычитаются из самых старых лотов).</p>
+      <table><thead><tr>
+        <th>Бумага</th><th>Дата покупки</th><th class="num">Цена лота</th>
+        <th class="num">Кол-во</th><th class="num">Вложено, ₽</th><th class="num">P&L лота</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  } catch { /* не критично */ }
 }
