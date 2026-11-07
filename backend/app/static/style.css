@@ -80,3 +80,7 @@ footer { margin-top: 36px; color: var(--muted); font-size: 12px; border-top: 1px
 .legend { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
 .legend-row { display: flex; align-items: center; gap: 9px; }
 .legend-swatch { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }
+
+.badge.buy { background: #14532d; color: #4ade80; }
+.badge.sell { background: #7f1d1d; color: #f87171; }
+.badge.hold { background: #2a3550; color: var(--muted); }

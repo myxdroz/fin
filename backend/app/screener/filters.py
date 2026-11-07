@@ -13,6 +13,8 @@ class BondFilter(BaseModel):
     min_yield: float = 0.0          # мин. доходность к погашению/оферте, %
     max_yield: float = 0.0          # макс. доходность, % (0 = без ограничения; страховка от мусорных данных)
     max_duration: int = 3650        # макс. дюрация, дней
+    mat_before: date | None = None  # погашение не позже этой даты
+    monthly_coupon: bool = False    # только ежемесячный купон
     min_liquidity: float = 1_000_000  # мин. дневной оборот, руб
     list_level: int = 0             # 0 = любой, иначе уровень листинга <= N
     only_ofz: bool = False
@@ -44,6 +46,10 @@ def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
     )
     if f.max_yield > 0:
         stmt = stmt.where(Bond.yield_at_pricing <= f.max_yield)
+    if f.mat_before:
+        stmt = stmt.where(Bond.mat_date <= f.mat_before)
+    if f.monthly_coupon:
+        stmt = stmt.where(Bond.coupon_period > 0, Bond.coupon_period <= 35)
     if f.list_level:
         stmt = stmt.where(Bond.list_level <= f.list_level, Bond.list_level > 0)
     if f.only_ofz:
@@ -66,6 +72,7 @@ def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
             "yield": round(b.yield_at_pricing, 2),
             "duration_years": round(b.duration / 365, 2),
             "coupon_percent": b.coupon_percent,
+            "coupon_period_days": b.coupon_period,
             "accr_int": b.accr_int,
             "mat_date": b.mat_date.isoformat() if b.mat_date else None,
             "offer_date": b.offer_date.isoformat() if b.offer_date else None,

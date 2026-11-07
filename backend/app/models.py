@@ -84,3 +84,17 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[float] = mapped_column(Float, default=0)
+
+
+class Strategy(Base):
+    """Сохранённая пользователем стратегия (профиль + сумма)."""
+
+    __tablename__ = "strategies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile: Mapped[str] = mapped_column(String(20))
+    amount: Mapped[float] = mapped_column(Float)
+    active: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = ({"sqlite_autoincrement": True},)

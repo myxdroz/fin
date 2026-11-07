@@ -247,6 +247,7 @@ async function reloadMyPortfolio() {
     return;
   }
   renderMyPortfolio(pf);
+  loadRebalance();
   // календарь выплат — фоном
   try {
     const res = await fetch(`/api/my/income?account_id=${myAccountId}`);
@@ -278,6 +279,7 @@ function renderMyPortfolio(pf) {
     <table><thead><tr>
       <th>Бумага</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость, ₽</th><th>Доля</th><th>P&L</th>
     </tr></thead><tbody>${rows}</tbody></table>
+    <div id="rebalanceBox" style="margin-top:22px"></div>
     <div id="incomeCalendar"></div>`;
 }
 
@@ -397,4 +399,62 @@ function renderDonut(sectors) {
         <div class="legend">${legend}</div>
       </div>
     </div>`;
+}
+
+// --- моя стратегия + ребалансировка ---
+async function loadStrategyStatus() {
+  try {
+    const r = await (await fetch("/api/strategy")).json();
+    $("#strategyStatus").textContent = r.strategy
+      ? `Активная стратегия: ${r.strategy.profile_label}, ${fmt(r.strategy.amount, 0)} ₽`
+      : "Стратегия не сохранена — подберите портфель и нажмите «Сохранить как мою стратегию»";
+  } catch { /* не критично */ }
+}
+loadStrategyStatus();
+
+async function saveStrategy() {
+  const f = new FormData($("#portfolioForm"));
+  const res = await fetch("/api/strategy", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile: f.get("profile"), amount: +f.get("amount") }),
+  });
+  if (res.ok) {
+    $("#strategyStatus").textContent = "Стратегия сохранена ✓";
+    setTimeout(loadStrategyStatus, 1500);
+  } else {
+    $("#strategyStatus").textContent = "Ошибка сохранения";
+  }
+}
+
+async function loadRebalance() {
+  let r;
+  try {
+    const res = await fetch("/api/my/rebalance");
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || res.status);
+    r = d;
+  } catch (e) {
+    $("#rebalanceBox").innerHTML = `<p class="muted">Ребалансировка: ${e.message}</p>`;
+    return;
+  }
+  const ACTION = { BUY: ["КУПИТЬ", "buy"], SELL: ["ПРОДАТЬ", "sell"], HOLD: ["ДЕРЖАТЬ", "hold"] };
+  const rows = r.actions.map(a => `
+    <tr>
+      <td><span class="badge ${ACTION[a.action][1]}">${ACTION[a.action][0]}</span></td>
+      <td><b>${a.ticker}</b><br><span class="muted">${a.name}</span></td>
+      <td class="num">${a.action === "HOLD" ? "—" : fmt(a.amount, 0) + " ₽"}</td>
+      <td class="muted">${a.note}</td>
+    </tr>`).join("");
+  const repl = r.replacement_candidates.length ? `
+    <p class="muted">Кандидаты на замену (вошли в индекс): ${
+      r.replacement_candidates.map(c => `<b>${c.ticker}</b> (${c.weight}%)`).join(", ")}</p>` : "";
+  $("#rebalanceBox").innerHTML = `
+    <h3>Ребалансировка по стратегии «${r.strategy.profile_label}» (${fmt(r.strategy.amount, 0)} ₽)</h3>
+    <p class="muted">Реальный портфель: ${fmt(r.real_total, 0)} ₽ + ${fmt(r.cash, 0)} ₽ свободных денег.
+       Целевая доходность стратегии: ${fmt(r.target_expected_yield)}%</p>
+    <table><thead><tr><th>Действие</th><th>Бумага</th><th>Сумма</th><th>Причина</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="muted" style="margin-top:10px">Итого: купить на ${fmt(r.buy_total, 0)} ₽, продать на ${fmt(r.sell_total, 0)} ₽</p>
+    ${repl}`;
 }
