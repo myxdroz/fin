@@ -39,11 +39,26 @@ PROFILES = {
         "description": "Преимущественно акции + длинные корпоративные облигации с максимальной доходностью. "
                        "Высокая волатильность, горизонт — от 3 лет.",
     },
+    "bluechips": {
+        "label": "Голубые фишки",
+        "bond_share": 0.2, "share_share": 0.8,
+        "max_duration": 1095, "bond_limit": 2, "share_limit": 8,
+        "max_price": 104.0, "only_quality": True, "blue_chips": True,
+        "description": "80% акций голубых фишек МосБиржи (Сбер, Лукойл, Газпром, Новатэк…) "
+                       "+ 20% короткие облигации 1 уровня. Максимальная ликвидность, горизонт — от 3 лет.",
+    },
 }
+
+# Наиболее ликвидные бумаги первого эшелона — состав ориентировочный
+BLUE_CHIPS = frozenset({
+    "SBER", "SBERP", "LKOH", "GAZP", "YDEX", "MGNT", "NVTK", "ROSN", "T",
+    "GMKN", "PLZL", "PHOR", "MTSS", "IRAO", "VTBR", "ALRS", "HEAD",
+    "RUAL", "MTLR", "MSNG", "RTKM",
+})
 
 
 class PortfolioRequest(BaseModel):
-    profile: str = Field(pattern="^(conservative|moderate|aggressive)$")
+    profile: str = Field(pattern="^(conservative|moderate|aggressive|bluechips)$")
     amount: float = Field(gt=0, description="Сумма портфеля, руб")
 
 
@@ -74,37 +89,47 @@ def _pick_bonds(db, cfg: dict, amount: float, target: float) -> list[dict]:
     if not candidates:
         return []
 
-    # Лестница: делим горизонт дюрации на столько же сегментов, сколько бумаг берём,
-    # из каждого сегмента — самая доходная. Не сидим в одной точке кривой доходности.
-    picked: list[dict] = []
-    n = cfg["bond_limit"]
-    seg = max(cfg["max_duration"] / 365 / n, 0.05)
-    buckets: list[list[dict]] = [[] for _ in range(n)]
-    for b in candidates:
-        idx = min(int(b["duration_years"] / seg), n - 1)
-        buckets[idx].append(b)
-
-    ofz_min = max(1, n // 3)
-    ofz_taken = 0
-    for bucket in buckets:
-        bucket.sort(key=lambda x: -x["yield"])
-        for b in bucket:
-            if len(picked) >= n:
-                break
-            same_issuer = sum(1 for p in picked if _issuer_key(p["shortname"]) == _issuer_key(b["shortname"]))
-            if same_issuer >= 2:
-                continue
-            if b["is_ofz"]:
-                ofz_taken += 1
-            picked.append(b)
-    # Гарантируем долю ОФЗ: добираем из оставшихся, если лестница их не взяла
-    if ofz_taken < ofz_min:
-        for b in sorted(candidates, key=lambda x: -x["yield"]):
-            if len(picked) >= n:
-                break
-            if b["is_ofz"] and b not in picked:
+    def _ladder(n: int) -> list[dict]:
+        seg = max(cfg["max_duration"] / 365 / n, 0.05)
+        buckets: list[list[dict]] = [[] for _ in range(n)]
+        for b in candidates:
+            idx = min(int(b["duration_years"] / seg), n - 1)
+            buckets[idx].append(b)
+        picked: list[dict] = []
+        ofz_min = max(1, n // 3)
+        ofz_taken = 0
+        for bucket in buckets:
+            bucket.sort(key=lambda x: -x["yield"])
+            for b in bucket:
+                if len(picked) >= n:
+                    break
+                same_issuer = sum(1 for p in picked if _issuer_key(p["shortname"]) == _issuer_key(b["shortname"]))
+                if same_issuer >= 2:
+                    continue
+                if b["is_ofz"]:
+                    ofz_taken += 1
                 picked.append(b)
-                ofz_taken += 1
+        # Гарантируем долю ОФЗ: добираем из оставшихся, если лестница их не взяла
+        if ofz_taken < ofz_min:
+            for b in sorted(candidates, key=lambda x: -x["yield"]):
+                if len(picked) >= n:
+                    break
+                if b["is_ofz"] and b not in picked:
+                    picked.append(b)
+                    ofz_taken += 1
+        return picked
+
+    # Позиций ровно столько, чтобы на каждую хватило хотя бы на один лот (номинал + НКД)
+    n = min(cfg["bond_limit"], len(candidates))
+    picked: list[dict] = []
+    while n >= 1:
+        picked = _ladder(n)
+        if picked and all(
+            b["price"] / 100 * b["face_value"] + b["accr_int"] <= target / len(picked)
+            for b in picked
+        ):
+            break
+        n -= 1
 
     # Равные доли внутри класса
     weight = target / len(picked)
@@ -123,10 +148,20 @@ def _pick_shares(db, cfg: dict, amount: float, target: float) -> list[dict]:
         min_div_yield=0,
         min_liquidity=min(50_000_000, amount * 0.1),
         list_level=1 if cfg["only_quality"] else 2,
-        limit=cfg["share_limit"] * 3,
+        limit=100 if cfg.get("blue_chips") else cfg["share_limit"] * 3,
     )
     candidates = screen_shares(db, f)
-    picked = candidates[: cfg["share_limit"]]
+    if cfg.get("blue_chips"):
+        candidates = [s for s in candidates if s["secid"] in BLUE_CHIPS]
+        candidates.sort(key=lambda x: -x["val_today"])  # голубые фишки — по ликвидности
+    # Позиций ровно столько, чтобы на каждую хватило хотя бы на один лот
+    n = min(cfg["share_limit"], len(candidates))
+    picked: list[dict] = []
+    while n >= 1:
+        picked = candidates[:n]
+        if all(s["lot_cost"] <= target / n for s in picked):
+            break
+        n -= 1
     if picked:
         for s in picked:
             s["weight"] = round(100 / len(picked), 1)
