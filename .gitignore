@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+backend/.venv/
+
+# Локальные данные БД (создаются синхронизацией на сервере)
+data/*.db
+data/*.db-*
+
+# Окружение / логи
+.env
+*.log
+nohup.out

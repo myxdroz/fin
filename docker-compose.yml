@@ -1,0 +1,17 @@
+services:
+  fin:
+    build: ./backend
+    container_name: fin-strategy
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - fin-data:/data
+    environment:
+      FIN_SYNC_ON_STARTUP: "true"
+      FIN_SCHEDULER_ENABLED: "true"
+      # ключевая ставка как запасной вариант, если MOEX её не отдаст
+      FIN_KEY_RATE: "21.0"
+
+volumes:
+  fin-data:
