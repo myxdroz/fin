@@ -67,3 +67,15 @@ a { color: var(--accent); text-decoration: none; }
 h3 { margin: 22px 0 10px; font-size: 16px; }
 .badge { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 4px; background: #2a3550; color: var(--muted); margin-right: 4px; }
 footer { margin-top: 36px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); padding-top: 14px; }
+
+.progress { background: #0d1320; border: 1px solid var(--border); border-radius: 5px; height: 10px; width: 100%; }
+.progress-fill { background: var(--accent); height: 100%; border-radius: 4px; }
+.goals-table { width: 100%; border-collapse: collapse; }
+.goals-table td { padding: 8px 10px; border: none; font-size: 14px; }
+.goals-table td:last-child { width: 55%; }
+.donut-wrap { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
+.donut-total { fill: var(--text); font-size: 19px; font-weight: 700; }
+.donut-sub { fill: var(--muted); font-size: 12px; }
+.legend { display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; }
+.legend-row { display: flex; align-items: center; gap: 9px; }
+.legend-swatch { width: 13px; height: 13px; border-radius: 3px; display: inline-block; }

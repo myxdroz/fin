@@ -22,7 +22,23 @@
   <button class="tab" data-tab="bonds">Скринер облигаций</button>
   <button class="tab" data-tab="shares">Скринер акций</button>
   <button class="tab" data-tab="my">Мой портфель</button>
+  <button class="tab" data-tab="goals">Цели</button>
 </nav>
+
+<!-- ===== ЦЕЛИ ===== -->
+<section id="tab-goals" class="tab-panel">
+  <div class="card">
+    <h2>Цели</h2>
+    <form id="goalsForm">
+      <label>Цель (капитал), ₽
+        <input type="number" id="capitalGoalInput" min="10000" step="50000">
+      </label>
+      <button type="submit">Сохранить</button>
+    </form>
+    <p id="goalAssumption" class="muted"></p>
+  </div>
+  <div id="goalsResult"></div>
+</section>
 
 <!-- ===== ПОРТФЕЛЬ ===== -->
 <section id="tab-portfolio" class="tab-panel active">

@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .database import init_db
 from .moex.sync import sync_all
-from .routers import api, myportfolio
+from .routers import api, goals, myportfolio
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Fin Strategy", lifespan=lifespan)
 app.include_router(api.router)
 app.include_router(myportfolio.router)
+app.include_router(goals.router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 

@@ -75,3 +75,12 @@ class IndexWeight(Base):
     shortname: Mapped[str] = mapped_column(String(120), default="")
     weight: Mapped[float] = mapped_column(Float, default=0)  # % от индекса
     tradedate: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+
+class Setting(Base):
+    """Ключ-значение для пользовательских настроек (например, цель по капиталу)."""
+
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[float] = mapped_column(Float, default=0)

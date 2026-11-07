@@ -8,6 +8,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     btn.classList.add("active");
     $("#tab-" + btn.dataset.tab).classList.add("active");
     if (btn.dataset.tab === "my") loadMyPortfolio();
+    if (btn.dataset.tab === "goals") loadGoals();
   });
 });
 
@@ -293,4 +294,106 @@ function renderIncome(cal) {
   $("#incomeCalendar").innerHTML = `
     <h3>Выплаты на 45 дней: ${fmt(cal.total, 0)} ₽</h3>
     <table><thead><tr><th>Дата</th><th>Выплата</th><th>Сумма, ₽</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// --- цели ---
+const SECTOR_COLORS = {
+  "Нефтегаз": "#f59e0b", "Добыча": "#84cc16", "Индустрия": "#64748b",
+  "Потребление вторичное": "#ec4899", "Потребление первичное": "#f472b6",
+  "Здоровье": "#14b8a6", "Финансы": "#3b82f6", "Технологии": "#8b5cf6",
+  "Телеком и Медиа": "#06b6d4", "Коммунальные": "#22c55e", "Недвижимость": "#a16207",
+  "ОФЗ": "#e2e8f0", "Корп. облигации": "#94a3b8", "ETF": "#6366f1", "Валюта": "#eab308",
+  "Прочее": "#71717a",
+};
+
+async function loadGoals() {
+  $("#goalsResult").innerHTML = "<p class='muted'>Загрузка…</p>";
+  let g;
+  try {
+    const res = await fetch("/api/goals");
+    if (!res.ok) throw new Error(`Ошибка ${res.status}`);
+    g = await res.json();
+  } catch (e) {
+    $("#goalsResult").innerHTML = `<p class="muted">Ошибка: ${e.message}</p>`;
+    return;
+  }
+  $("#capitalGoalInput").value = g.capital_goal;
+  $("#goalAssumption").textContent =
+    `Цель дохода считается как: ${g.goal_income.assumption} → ${g.goal_income.annual_pct}% годовых`;
+
+  const cur = g.current || {};
+  const curValue = cur.value != null ? `${fmt(cur.value, 0)} ₽` : "—";
+  const curIncome = cur.income_month != null ? `${fmt(cur.income_month, 0)} ₽` : "—";
+  const bar = (pct) => {
+    if (pct == null) return "<div class='muted'>нет данных</div>";
+    const w = Math.min(pct, 100);
+    return `<div class="progress"><div class="progress-fill" style="width:${w}%"></div></div>
+            <span class="muted">${fmt(pct, 1)}%</span>`;
+  };
+
+  $("#goalsResult").innerHTML = `
+    <div class="summary">
+      <div class="stat"><div class="v">${fmt(g.goal_income.monthly, 0)} ₽</div><div class="k">Цель: доход в месяц</div></div>
+      <div class="stat"><div class="v">${curIncome}</div><div class="k">Текущий доход в месяц</div></div>
+      <div class="stat"><div class="v">${curValue}</div><div class="k">Текущая стоимость портфеля</div></div>
+    </div>
+    ${cur.error ? `<p class="muted">${cur.error}</p>` : ""}
+    <div class="card">
+      <h3>Достижение цели</h3>
+      <table class="goals-table">
+        <tr><td style="width:40%">Капитал: ${curValue} / ${fmt(g.capital_goal, 0)} ₽</td>
+            <td>${bar(g.progress_capital_pct)}</td></tr>
+        <tr><td>Доход: ${curIncome} / ${fmt(g.goal_income.monthly, 0)} ₽</td>
+            <td>${bar(g.progress_income_pct)}</td></tr>
+      </table>
+    </div>
+    <div id="sectorChart"></div>`;
+
+  if (cur.sectors && cur.sectors.length) {
+    renderDonut(cur.sectors);
+  } else if (!cur.error) {
+    $("#sectorChart").innerHTML = "<p class='muted'>Диаграмма по отраслям появится после пополнения портфеля.</p>";
+  }
+}
+
+$("#goalsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await fetch("/api/goals/capital", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: +$("#capitalGoalInput").value }),
+  });
+  loadGoals();
+});
+
+function renderDonut(sectors) {
+  const size = 260, r = 90, cx = size / 2, cy = size / 2;
+  const C = 2 * Math.PI * r;
+  let offset = 0;
+  const total = sectors.reduce((s, x) => s + x.value, 0) || 1;
+  const circles = sectors.map(s => {
+    const len = s.value / total * C;
+    const c = `<circle r="${r}" cx="${cx}" cy="${cy}" fill="none"
+      stroke="${SECTOR_COLORS[s.name] || "#71717a"}" stroke-width="38"
+      stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-offset}"
+      transform="rotate(-90 ${cx} ${cy})"><title>${s.name}: ${fmt(s.pct, 1)}%</title></circle>`;
+    offset += len;
+    return c;
+  }).join("");
+  const legend = sectors.map(s => `
+    <div class="legend-row">
+      <span class="legend-swatch" style="background:${SECTOR_COLORS[s.name] || "#71717a"}"></span>
+      ${s.name} — ${fmt(s.pct, 1)}%
+    </div>`).join("");
+  $("#sectorChart").innerHTML = `
+    <div class="card">
+      <h3>Структура портфеля по видам деятельности</h3>
+      <div class="donut-wrap">
+        <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${circles}
+          <text x="${cx}" y="${cy - 4}" text-anchor="middle" class="donut-total">${fmt(total, 0)} ₽</text>
+          <text x="${cx}" y="${cy + 16}" text-anchor="middle" class="donut-sub">всего</text>
+        </svg>
+        <div class="legend">${legend}</div>
+      </div>
+    </div>`;
 }
