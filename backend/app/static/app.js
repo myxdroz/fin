@@ -7,6 +7,7 @@ document.querySelectorAll(".tab").forEach(btn => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     $("#tab-" + btn.dataset.tab).classList.add("active");
+    if (btn.dataset.tab === "my") loadMyPortfolio();
   });
 });
 
@@ -198,4 +199,97 @@ function renderPortfolio(r) {
     <table><thead><tr><th>Бумага</th><th>Доля</th><th>Сумма, ₽</th><th>Кол-во</th><th>Цена, ₽</th><th>Див. доходн., %</th></tr></thead>
     <tbody>${shareRows}</tbody></table>` : ""}
     <p class="muted" style="margin-top:14px">${r.disclaimer}</p>`;
+}
+
+// --- мой портфель (Т-Банк) ---
+let myAccountId = null;
+
+async function loadMyPortfolio() {
+  $("#myPortfolioResult").innerHTML = "<p class='muted'>Загрузка…</p>";
+  let accounts;
+  try {
+    accounts = (await (await fetch("/api/my/accounts")).json()).accounts;
+  } catch (e) {
+    $("#myPortfolioResult").innerHTML = `<p class="muted">Не удалось получить счета: ${e.message}</p>`;
+    return;
+  }
+  if (!accounts.length) {
+    $("#myPortfolioResult").innerHTML = "<p class='muted'>Счета не найдены.</p>";
+    return;
+  }
+  myAccountId = myAccountId || accounts[0].id;
+  $("#myAccounts").innerHTML = `
+    <label>Счёт
+      <select id="accountSelect">
+        ${accounts.map(a => `<option value="${a.id}" ${a.id === myAccountId ? "selected" : ""}>${a.name || a.id} (${a.type})</option>`).join("")}
+      </select>
+    </label>
+    <button onclick="reloadMyPortfolio()" class="btn-secondary">Обновить</button>`;
+  $("#accountSelect").addEventListener("change", e => {
+    myAccountId = e.target.value;
+    reloadMyPortfolio();
+  });
+  await reloadMyPortfolio();
+}
+
+async function reloadMyPortfolio() {
+  $("#myPortfolioResult").innerHTML = "<p class='muted'>Загрузка позиций…</p>";
+  let pf;
+  try {
+    const res = await fetch(`/api/my/portfolio?account_id=${myAccountId}`);
+    if (!res.ok) throw new Error((await res.json()).detail || res.status);
+    pf = await res.json();
+  } catch (e) {
+    $("#myPortfolioResult").innerHTML = `<p class="muted">${e.message}</p>`;
+    return;
+  }
+  renderMyPortfolio(pf);
+  // календарь выплат — фоном
+  try {
+    const res = await fetch(`/api/my/income?account_id=${myAccountId}`);
+    if (res.ok) renderIncome(await res.json());
+  } catch { /* календарь не критичен */ }
+}
+
+function renderMyPortfolio(pf) {
+  const rows = pf.positions.map(p => `
+    <tr>
+      <td>${p.ticker ? `<b>${p.ticker}</b><br>` : ""}<span class="muted">${p.name}</span>
+          <span class="badge">${p.type_label}</span></td>
+      <td class="num">${p.quantity}</td>
+      <td class="num">${fmt(p.avg_price, 2)}</td>
+      <td class="num">${fmt(p.current_price, 2)}</td>
+      <td class="num">${fmt(p.value, 0)}</td>
+      <td class="num">${p.weight}%</td>
+      <td class="num ${p.pnl >= 0 ? "yield" : ""}">${fmt(p.pnl, 0)} (${fmt(p.pnl_pct, 1)}%)</td>
+    </tr>`).join("");
+  $("#myPortfolioResult").innerHTML = `
+    <div class="summary">
+      <div class="stat"><div class="v">${fmt(pf.total, 0)} ₽</div><div class="k">Стоимость портфеля</div></div>
+      <div class="stat"><div class="v">${fmt(pf.total_shares, 0)} ₽</div><div class="k">Акции</div></div>
+      <div class="stat"><div class="v">${fmt(pf.total_bonds, 0)} ₽</div><div class="k">Облигации</div></div>
+      <div class="stat"><div class="v">${fmt(pf.total_etf || 0, 0)} ₽</div><div class="k">ETF</div></div>
+      <div class="stat"><div class="v">${fmt(pf.total_currencies, 0)} ₽</div><div class="k">Деньги</div></div>
+      <div class="stat"><div class="v ${pf.expected_yield >= 0 ? "yield" : ""}">${fmt(pf.expected_yield, 0)} ₽</div><div class="k">Нереализованный результат</div></div>
+    </div>
+    <table><thead><tr>
+      <th>Бумага</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость, ₽</th><th>Доля</th><th>P&L</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div id="incomeCalendar"></div>`;
+}
+
+function renderIncome(cal) {
+  if (!cal.events.length) {
+    $("#incomeCalendar").innerHTML = "<p class='muted' style='margin-top:14px'>Объявленных выплат на ближайшие 45 дней нет.</p>";
+    return;
+  }
+  const rows = cal.events.map(e => `
+    <tr>
+      <td>${e.date}</td>
+      <td><span class="badge">${e.kind}</span> <b>${e.ticker}</b></td>
+      <td class="num yield">${fmt(e.amount, 0)} ₽</td>
+    </tr>`).join("");
+  $("#incomeCalendar").innerHTML = `
+    <h3>Выплаты на 45 дней: ${fmt(cal.total, 0)} ₽</h3>
+    <table><thead><tr><th>Дата</th><th>Выплата</th><th>Сумма, ₽</th></tr></thead><tbody>${rows}</tbody></table>`;
 }

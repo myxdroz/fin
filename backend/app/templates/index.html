@@ -21,6 +21,7 @@
   <button class="tab active" data-tab="portfolio">Портфель</button>
   <button class="tab" data-tab="bonds">Скринер облигаций</button>
   <button class="tab" data-tab="shares">Скринер акций</button>
+  <button class="tab" data-tab="my">Мой портфель</button>
 </nav>
 
 <!-- ===== ПОРТФЕЛЬ ===== -->
@@ -91,8 +92,18 @@
   <div id="sharesResult"></div>
 </section>
 
-<footer>
-  Сервис не является источником индивидуальной инвестиционной рекомендации.
+<!-- ===== МОЙ ПОРТФЕЛЬ ===== -->
+<section id="tab-my" class="tab-panel">
+  <div class="card">
+    <h2>Мой портфель (Т-Банк)</h2>
+    <p class="muted">Реальные позиции и ближайшие выплаты по вашему брокерскому счёту.
+       Данные читаются через T-Invest API в режиме «только чтение».</p>
+    <div id="myAccounts"></div>
+  </div>
+  <div id="myPortfolioResult"></div>
+</section>
+
+<footer>  Сервис не является источником индивидуальной инвестиционной рекомендации.
   Данные: MOEX ISS API. Инвестиции сопряжены с риском потери капитала.
 </footer>
 

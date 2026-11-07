@@ -93,6 +93,9 @@ certbot --nginx -d fin.example.com
 | POST | `/api/bonds` | Скринер облигаций (тело — фильтры) |
 | POST | `/api/shares` | Скринер акций |
 | POST | `/api/portfolio` | Подбор портфеля: `{"profile": "moderate", "amount": 1000000}` |
+| GET | `/api/my/accounts` | Счета Т-Банка (нужен FIN_TINVEST_TOKEN) |
+| GET | `/api/my/portfolio?account_id=` | Реальные позиции по счёту |
+| GET | `/api/my/income?account_id=&days=45` | Календарь купонов и дивидендов |
 
 Документация FastAPI: `/docs`.
 
