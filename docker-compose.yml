@@ -1,6 +1,9 @@
 services:
   fin:
-    build: ./backend
+    build:
+      context: ./backend
+      args:
+        APP_VERSION: ${APP_VERSION:-unknown}
     container_name: fin-strategy
     restart: unless-stopped
     ports:

@@ -34,6 +34,7 @@ async function loadStatus() {
   try {
     const h = await (await fetch("/api/health")).json();
     $("#keyRate").textContent = fmt(h.key_rate, 1);
+    $("#appVersion").textContent = "v." + (h.version || "dev");
   } catch { $("#dataStatus").textContent = "API недоступен"; }
 }
 loadStatus();

@@ -12,7 +12,9 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "key_rate": settings.key_rate}
+    import os
+    return {"status": "ok", "key_rate": settings.key_rate,
+            "version": os.environ.get("APP_VERSION", "dev")}
 
 
 @router.post("/sync")

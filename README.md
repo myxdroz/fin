@@ -51,8 +51,11 @@ apt install -y docker-compose-plugin
 
 ```bash
 git clone <repo-url> /opt/fin && cd /opt/fin
+export APP_VERSION=$(git rev-parse --short HEAD)   # хеш коммита — виден в шапке сайта
 docker compose up -d --build
 ```
+
+Обновление в будущем: `git pull`, затем та же команда с `export APP_VERSION=...`.
 
 Сервис будет доступен на `http://<IP_контейнера>:8000`.
 
