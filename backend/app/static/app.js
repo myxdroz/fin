@@ -451,6 +451,8 @@ async function loadRebalance() {
     <tr>
       <td><span class="badge ${ACTION[a.action][1]}">${ACTION[a.action][0]}</span></td>
       <td><b>${a.name || a.ticker}</b>${a.name && a.name != a.ticker ? `<br><span class="muted">${a.ticker}</span>` : ""}</td>
+      <td class="num">${a.held_qty ? fmt(a.held_qty, a.held_qty % 1 ? 2 : 0) : "—"}</td>
+      <td class="num ${a.action === "SELL" ? "sell-qty" : a.action === "BUY" ? "yield" : ""}">${a.qty ? (a.action === "BUY" ? "+" : "−") + fmt(a.qty, a.qty % 1 ? 2 : 0) : "—"}</td>
       <td class="num">${a.action === "HOLD" ? "—" : fmt(a.amount, 0) + " ₽"}</td>
       <td class="muted">${a.note}</td>
     </tr>`).join("");
@@ -461,7 +463,7 @@ async function loadRebalance() {
     <h3>Ребалансировка по стратегии «${r.strategy.profile_label}» (${fmt(r.strategy.amount, 0)} ₽)</h3>
     <p class="muted">Реальный портфель: ${fmt(r.real_total, 0)} ₽ + ${fmt(r.cash, 0)} ₽ свободных денег.
        Целевая доходность стратегии: ${fmt(r.target_expected_yield)}%</p>
-    <table><thead><tr><th>Действие</th><th>Бумага</th><th class="num">Сумма</th><th>Причина</th></tr></thead>
+    <table><thead><tr><th>Действие</th><th>Бумага</th><th class="num">Есть, шт</th><th class="num">Δ, шт</th><th class="num">Сумма</th><th>Причина</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <p class="muted" style="margin-top:10px">Итого: купить на ${fmt(r.buy_total, 0)} ₽, продать на ${fmt(r.sell_total, 0)} ₽</p>
     ${repl}`;

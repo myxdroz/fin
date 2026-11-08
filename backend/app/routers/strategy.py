@@ -95,12 +95,27 @@ def rebalance(db: Session = Depends(get_db)):
     target_pos: dict[str, dict] = {}
     for b in target["bonds"]:
         target_pos[b["secid"]] = {"ticker": b["secid"], "name": b["shortname"],
-                                  "type": "bond", "amount": b["amount"]}
+                                  "type": "bond", "amount": b["amount"],
+                                  "price": b["price"], "face_value": b["face_value"],
+                                  "lot_size": 1, "target_qty": b["approx_qty"]}
     for s in target["shares"]:
         target_pos[s["secid"]] = {"ticker": s["secid"], "name": s["shortname"],
-                                  "type": "share", "amount": s["amount"]}
+                                  "type": "share", "amount": s["amount"],
+                                  "price": s["price"], "face_value": 1,
+                                  "lot_size": s["lot_size"], "target_qty": s["approx_qty"]}
 
     index_members = {w.secid for w in db.scalars(select(IndexWeight)).all()}
+
+    def qty_for(tpos: dict, amount: float) -> int:
+        """Сумма → количество бумаг (с учётом лота/номинала)."""
+        if tpos["type"] == "bond":
+            unit = tpos["price"] / 100 * tpos["face_value"]
+        else:
+            unit = tpos["price"] * tpos["lot_size"]
+        if unit <= 0:
+            return 0
+        lots = int(amount // unit)
+        return lots * (tpos["lot_size"] if tpos["type"] == "share" else 1)
 
     actions = []
     for tid, tpos in target_pos.items():
@@ -108,19 +123,28 @@ def rebalance(db: Session = Depends(get_db)):
         if cur is None:
             actions.append({**tpos, "action": "BUY",
                             "amount": round(tpos["amount"], 0),
+                            "held_qty": 0,
+                            "qty": tpos["target_qty"],
                             "note": "новая позиция в стратегии"})
         else:
             diff = tpos["amount"] - cur["value"]
             if diff > MIN_DIFF_RUB:
                 actions.append({**tpos, "action": "BUY",
                                 "amount": round(diff, 0),
+                                "held_qty": round(cur["qty"], 4),
+                                "qty": qty_for(tpos, diff),
                                 "note": f"есть {cur['qty']:g} шт, докупить"})
             elif diff < -MIN_DIFF_RUB:
+                unit_price = cur["current_price"] or tpos["price"]
                 actions.append({**tpos, "action": "SELL",
                                 "amount": round(-diff, 0),
+                                "held_qty": round(cur["qty"], 4),
+                                "qty": round(-diff / unit_price) if unit_price else 0,
                                 "note": "перевес против стратегии"})
             else:
-                actions.append({**tpos, "action": "HOLD", "amount": 0, "note": "в пределах нормы"})
+                actions.append({**tpos, "action": "HOLD", "amount": 0,
+                                "held_qty": round(cur["qty"], 4), "qty": 0,
+                                "note": "в пределах нормы"})
 
     for rticker, rpos in real.items():
         if rticker in target_pos:
@@ -133,7 +157,10 @@ def rebalance(db: Session = Depends(get_db)):
             note = "ETF вне стратегии"
         else:
             note = "облигация вне стратегии"
-        actions.append({**rpos, "action": "SELL", "amount": round(rpos["value"], 0), "note": note})
+        actions.append({**rpos, "action": "SELL", "amount": round(rpos["value"], 0),
+                        "held_qty": round(rpos["qty"], 4),
+                        "qty": round(rpos["qty"], 4),
+                        "lot_size": 1, "target_qty": 0, "note": note})
 
     # кандидаты на замену: члены индекса, которых нет ни в цели, ни в портфеле
     replacement_candidates = []
