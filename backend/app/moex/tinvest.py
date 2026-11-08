@@ -8,6 +8,7 @@ MOEX ISS больше не отдаёт историю дивидендов, Sma
 """
 
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -54,9 +55,19 @@ class TInvestDividends:
 
     def _post(self, service: str, method: str, body: dict) -> dict:
         url = f"{BASE}/{SERVICES[service]}/{method}"
-        resp = self._http.post(url, json=body)
-        resp.raise_for_status()
-        return resp.json()
+        # T-Invest иногда отдаёт 500 на тяжёлых запросах — пробуем до 3 раз
+        last = None
+        for attempt in range(3):
+            try:
+                resp = self._http.post(url, json=body)
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                last = e
+                if e.response.status_code < 500 or attempt == 2:
+                    raise
+                time.sleep(1.5 * (attempt + 1))
+        raise last
 
     def shares_figi(self) -> dict[str, str]:
         """ticker -> figi по всем акциям, доступным брокеру."""
