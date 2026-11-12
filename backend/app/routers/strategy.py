@@ -53,8 +53,12 @@ def save_strategy(body: StrategyIn, db: Session = Depends(get_db)):
 
 
 @router.get("/api/my/rebalance")
-def rebalance(db: Session = Depends(get_db)):
-    """Целевая стратегия vs реальный счёт Т-Банка: что купить, что продать, что держать."""
+def rebalance(budget_mode: bool = False, db: Session = Depends(get_db)):
+    """Целевая стратегия vs реальный счёт Т-Банка: что купить, что продать, что держать.
+
+    budget_mode=true — оставить только покупки, которые помещаются в свободный остаток
+    (с приоритетом по доходности).
+    """
     strat = _active_strategy(db)
     if not strat:
         raise HTTPException(status_code=400, detail="Сначала сохраните стратегию на вкладке «Портфель»")
@@ -97,12 +101,14 @@ def rebalance(db: Session = Depends(get_db)):
         target_pos[b["secid"]] = {"ticker": b["secid"], "name": b["shortname"],
                                   "type": "bond", "amount": b["amount"],
                                   "price": b["price"], "face_value": b["face_value"],
-                                  "lot_size": 1, "target_qty": b["approx_qty"]}
+                                  "lot_size": 1, "target_qty": b["approx_qty"],
+                                  "priority": b["yield"]}
     for s in target["shares"]:
         target_pos[s["secid"]] = {"ticker": s["secid"], "name": s["shortname"],
                                   "type": "share", "amount": s["amount"],
                                   "price": s["price"], "face_value": 1,
-                                  "lot_size": s["lot_size"], "target_qty": s["approx_qty"]}
+                                  "lot_size": s["lot_size"], "target_qty": s["approx_qty"],
+                                  "priority": s["div_yield_12m"]}
 
     index_members = {w.secid for w in db.scalars(select(IndexWeight)).all()}
 
@@ -178,7 +184,21 @@ def rebalance(db: Session = Depends(get_db)):
             replacement_candidates.append({"ticker": secid, "name": wmap[secid].shortname,
                                            "weight": round(wmap[secid].weight, 2)})
 
-    order = {"SELL": 0, "BUY": 1, "HOLD": 2}
+    if budget_mode:
+        # оставляем только то, что помещается в свободный остаток,
+        # в порядке убывания доходности позиции
+        avail = cash
+        buys = sorted((a for a in actions if a["action"] == "BUY"),
+                      key=lambda a: -a.get("priority", 0))
+        for a in buys:
+            if a["amount"] <= avail:
+                avail -= a["amount"]
+            else:
+                a["action"] = "SKIP"
+                a["qty"] = 0
+                a["note"] += " — не хватает денег"
+
+    order = {"SELL": 0, "BUY": 1, "SKIP": 2, "HOLD": 3}
     actions.sort(key=lambda a: (order[a["action"]], -a["amount"]))
     return {
         "strategy": {"profile": strat.profile,
@@ -186,6 +206,8 @@ def rebalance(db: Session = Depends(get_db)):
                      "amount": strat.amount},
         "real_total": round(pf["total"], 0),
         "cash": round(cash, 0),
+        "budget_mode": budget_mode,
+        "budget": round(cash, 0) if budget_mode else None,
         "target_expected_yield": target["expected_yield"],
         "actions": actions,
         "replacement_candidates": replacement_candidates,

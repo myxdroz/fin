@@ -438,7 +438,8 @@ async function saveStrategy() {
 async function loadRebalance() {
   let r;
   try {
-    const res = await fetch("/api/my/rebalance");
+    const budget = document.getElementById("budgetMode")?.checked ? "true" : "false";
+    const res = await fetch(`/api/my/rebalance?budget_mode=${budget}`);
     const text = await res.text();
     let d;
     try { d = JSON.parse(text); }
@@ -449,14 +450,15 @@ async function loadRebalance() {
     $("#rebalanceBox").innerHTML = `<p class="muted">Ребалансировка: ${e.message}</p>`;
     return;
   }
-  const ACTION = { BUY: ["КУПИТЬ", "buy"], SELL: ["ПРОДАТЬ", "sell"], HOLD: ["ДЕРЖАТЬ", "hold"] };
+  const ACTION = { BUY: ["КУПИТЬ", "buy"], SELL: ["ПРОДАТЬ", "sell"],
+                   HOLD: ["ДЕРЖАТЬ", "hold"], SKIP: ["ПОЗЖЕ", "hold"] };
   const rows = r.actions.map(a => `
     <tr>
       <td><span class="badge ${ACTION[a.action][1]}">${ACTION[a.action][0]}</span></td>
       <td><b>${a.name || a.ticker}</b>${a.name && a.name != a.ticker ? `<br><span class="muted">${a.ticker}</span>` : ""}</td>
       <td class="num">${a.held_qty ? fmt(a.held_qty, a.held_qty % 1 ? 2 : 0) : "—"}</td>
       <td class="num ${a.action === "SELL" ? "sell-qty" : a.action === "BUY" ? "yield" : ""}">${a.qty ? (a.action === "BUY" ? "+" : "−") + fmt(a.qty, a.qty % 1 ? 2 : 0) : "—"}</td>
-      <td class="num">${a.action === "HOLD" ? "—" : fmt(a.amount, 0) + " ₽"}</td>
+      <td class="num">${(a.action === "HOLD" || a.action === "SKIP") ? "—" : fmt(a.amount, 0) + " ₽"}</td>
       <td class="muted">${a.note}</td>
     </tr>`).join("");
   const repl = r.replacement_candidates.length ? `
@@ -466,6 +468,10 @@ async function loadRebalance() {
     <h3>Ребалансировка по стратегии «${r.strategy.profile_label}» (${fmt(r.strategy.amount, 0)} ₽)</h3>
     <p class="muted">Реальный портфель: ${fmt(r.real_total, 0)} ₽ + ${fmt(r.cash, 0)} ₽ свободных денег.
        Целевая доходность стратегии: ${fmt(r.target_expected_yield)}%</p>
+    <label class="check" style="margin:8px 0">
+      <input type="checkbox" id="budgetMode" ${r.budget_mode ? "checked" : ""} onchange="loadRebalance()">
+      Только на доступные деньги — ${fmt(r.cash, 0)} ₽ (покупки по приоритету доходности)
+    </label>
     <table><thead><tr><th>Действие</th><th>Бумага</th><th class="num">Есть, шт</th><th class="num">Δ, шт</th><th class="num">Сумма</th><th>Причина</th></tr></thead>
     <tbody>${rows}</tbody></table>
     <p class="muted" style="margin-top:10px">Итого: купить на ${fmt(r.buy_total, 0)} ₽, продать на ${fmt(r.sell_total, 0)} ₽</p>
