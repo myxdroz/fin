@@ -79,11 +79,18 @@ def rebalance(budget_mode: bool = False, db: Session = Depends(get_db)):
 
     # реальные позиции по тикеру (для облигаций тикер Т-Инвеста = ISIN = наш secid)
     real: dict[str, dict] = {}
-    cash = 0.0
+    cash_rub = 0.0
+    cash_fx: list[dict] = []  # валютный остаток (требует конвертации)
     for p in pf["positions"]:
         ticker = figi_map.get(p["figi"], {}).get("ticker", "")
         if p["type"] == "currency":
-            cash += p["current_price"] * p["quantity"]
+            value = p["current_price"] * p["quantity"]
+            ccy = p["figi"][:3]
+            if ccy == "RUB":
+                cash_rub += value
+            else:
+                cash_fx.append({"ccy": ccy, "qty": round(p["quantity"], 2),
+                                "value_rub": round(value, 0)})
             continue
         if not ticker:
             continue
@@ -187,7 +194,7 @@ def rebalance(budget_mode: bool = False, db: Session = Depends(get_db)):
     if budget_mode:
         # оставляем только то, что помещается в свободный остаток,
         # в порядке убывания доходности позиции
-        avail = cash
+        avail = cash_rub
         buys = sorted((a for a in actions if a["action"] == "BUY"),
                       key=lambda a: -a.get("priority", 0))
         for a in buys:
@@ -205,9 +212,10 @@ def rebalance(budget_mode: bool = False, db: Session = Depends(get_db)):
                      "profile_label": PROFILES[strat.profile]["label"],
                      "amount": strat.amount},
         "real_total": round(pf["total"], 0),
-        "cash": round(cash, 0),
+        "cash": round(cash_rub, 0),
+        "cash_fx": cash_fx,
         "budget_mode": budget_mode,
-        "budget": round(cash, 0) if budget_mode else None,
+        "budget": round(cash_rub, 0) if budget_mode else None,
         "target_expected_yield": target["expected_yield"],
         "actions": actions,
         "replacement_candidates": replacement_candidates,

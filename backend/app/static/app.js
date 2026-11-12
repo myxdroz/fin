@@ -464,9 +464,11 @@ async function loadRebalance() {
   const repl = r.replacement_candidates.length ? `
     <p class="muted">Кандидаты на замену (вошли в индекс): ${
       r.replacement_candidates.map(c => `<b>${c.ticker}</b> (${c.weight}%)`).join(", ")}</p>` : "";
+  const fxStr = (r.cash_fx || []).map(f => `${f.qty} ${f.ccy} (≈${fmt(f.value_rub, 0)} ₽)`).join(" + ");
   $("#rebalanceBox").innerHTML = `
     <h3>Ребалансировка по стратегии «${r.strategy.profile_label}» (${fmt(r.strategy.amount, 0)} ₽)</h3>
-    <p class="muted">Реальный портфель: ${fmt(r.real_total, 0)} ₽ + ${fmt(r.cash, 0)} ₽ свободных денег.
+    <p class="muted">Реальный портфель: ${fmt(r.real_total, 0)} ₽. Свободные деньги: <b>${fmt(r.cash, 0)} ₽</b>${
+      fxStr ? ` + ${fxStr} — под покупки не идут, нужна конвертация` : ""}.
        Целевая доходность стратегии: ${fmt(r.target_expected_yield)}%</p>
     <label class="check" style="margin:8px 0">
       <input type="checkbox" id="budgetMode" ${r.budget_mode ? "checked" : ""} onchange="loadRebalance()">
