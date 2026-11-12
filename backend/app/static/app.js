@@ -171,7 +171,11 @@ function renderPortfolio(r) {
   const bondRows = r.bonds.map(b => `
     <tr>
       <td><a href="${moexLink(b.secid)}" target="_blank">${b.secid}</a><br>
-          <span class="muted">${b.shortname}</span>${b.is_ofz ? ' <span class="badge">ОФЗ</span>' : ""}</td>
+          <span class="muted">${b.shortname}</span>
+          ${b.is_ofz ? ' <span class="badge">ОФЗ</span>' : ""}
+          ${b.flags && b.flags.offer ? ` <span class="badge" title="Доходность посчитана до даты оферты">оферта ${b.offer_date || ""}</span>` : ""}
+          ${b.flags && b.flags.floating ? ' <span class="badge" title="Купон привязан к ключевой ставке, пересматривается">флоатер</span>' : ""}
+          ${b.flags && b.flags.amort ? ' <span class="badge">амортизация</span>' : ""}</td>
       <td class="num">${b.weight}%</td>
       <td class="num">${fmt(b.amount, 0)}</td>
       <td class="num">${b.approx_qty}</td>
@@ -203,7 +207,11 @@ function renderPortfolio(r) {
     ${r.shares.length ? `<h3>Акции (${r.shares.length})</h3>
     <table><thead><tr><th>Бумага</th><th class="num" title="Доля внутри акционной части портфеля">Доля*</th><th class="num">Сумма, ₽</th><th class="num">Кол-во</th><th class="num">Цена, ₽</th><th class="num">Див. доходн., %</th></tr></thead>
     <tbody>${shareRows}</tbody></table>
-    <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${r.bonds.length ? fmt(r.bonds[0].amount * r.bonds.length / r.amount * 100, 0) : 0}% / акции ${r.shares.length ? fmt(r.shares[0].amount * r.shares.length / r.amount * 100, 0) : 0}% от ${fmt(r.amount, 0)} ₽.</p>` : ""}
+    <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${r.bonds.length ? fmt(r.bonds[0].amount * r.bonds.length / r.amount * 100, 0) : 0}% / акции ${r.shares.length ? fmt(r.shares[0].amount * r.shares.length / r.amount * 100, 0) : 0}% от ${fmt(r.amount, 0)} ₽.${
+      r.bonds.some(b => b.flags && b.flags.offer) ? " Доходность по бумагам с офертой посчитана до даты оферты." : ""
+    }${
+      r.bonds.some(b => b.flags && b.flags.floating) ? " Флоатеры: доходность условна (купон пересматривается со ставкой)." : ""
+    }</p>` : ""}
     <p class="muted" style="margin-top:14px">${r.disclaimer}</p>
     <button class="btn-secondary" onclick="exportPortfolioCSV()">Экспорт CSV</button>`;
 }
