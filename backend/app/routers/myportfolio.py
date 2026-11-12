@@ -247,3 +247,36 @@ def get_lots(account_id: str = Query(...)):
         return {"positions": positions}
     finally:
         t.close()
+
+
+@router.get("/offers")
+def get_offers(account_id: str = Query(...), db: Session = Depends(get_db)):
+    """Ближайшие оферты по облигациям, которые есть в портфеле."""
+    from ..models import Bond
+
+    t = _client()
+    try:
+        pf = t.portfolio(account_id)
+        figi_map = t.instruments_by_figi()
+    finally:
+        t.close()
+
+    today = date.today()
+    events = []
+    for p in pf["positions"]:
+        if p["type"] != "bond" or p["quantity"] <= 0:
+            continue
+        isin = figi_map.get(p["figi"], {}).get("ticker", "")
+        bond = db.get(Bond, isin) if isin else None
+        if not bond or not bond.offer_date or bond.offer_date < today:
+            continue
+        events.append({
+            "ticker": isin,
+            "name": bond.shortname,
+            "offer_date": bond.offer_date.isoformat(),
+            "days_left": (bond.offer_date - today).days,
+            "qty": round(p["quantity"], 4),
+            "price": bond.last_price,
+        })
+    events.sort(key=lambda e: e["offer_date"])
+    return {"events": events}

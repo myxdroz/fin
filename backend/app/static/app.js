@@ -294,6 +294,7 @@ function renderMyPortfolio(pf) {
     </tr></thead><tbody>${rows}</tbody></table>
     <div id="rebalanceBox" style="margin-top:22px"></div>
     <div id="incomeCalendar"></div>
+    <div id="offersBox" style="margin-top:22px"></div>
     <div id="taxesBox" style="margin-top:22px"></div>
     <div id="historyBox" style="margin-top:22px"></div>
     <div id="lotsBox" style="margin-top:22px"></div>`;
@@ -520,6 +521,7 @@ loadMyPortfolio = async function () {
   await loadTaxes();
   await loadHistory();
   await loadLots();
+  await loadOffers();
 };
 
 async function loadTaxes() {
@@ -620,6 +622,37 @@ async function loadLots() {
       <table><thead><tr>
         <th>Бумага</th><th>Дата покупки</th><th class="num">Цена лота</th>
         <th class="num">Кол-во</th><th class="num">Вложено, ₽</th><th class="num">P&L лота</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  } catch { /* не критично */ }
+}
+
+// --- оферты по облигациям портфеля ---
+async function loadOffers() {
+  const box = $("#offersBox");
+  if (!myAccountId || !box) return;
+  try {
+    const res = await fetch(`/api/my/offers?account_id=${myAccountId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (!d.events.length) {
+      box.innerHTML = "<p class='muted'>У облигаций в портфеле нет предстоящих оферт.</p>";
+      return;
+    }
+    const rows = d.events.map(e => `
+      <tr>
+        <td>${e.offer_date}</td>
+        <td><b>${e.name}</b><br><span class="muted">${e.ticker}</span></td>
+        <td class="num">${e.qty}</td>
+        <td class="num">${e.days_left}</td>
+        <td class="num">${fmt(e.price, 2)}%</td>
+      </tr>`).join("");
+    box.innerHTML = `
+      <h3>Оферты по облигациям</h3>
+      <p class="muted">В эти даты эмитент обязан выкупить бумагу. Если цена на рынке ниже номинала —
+         выгодно подать заявку на оферту (условия смотрите в приложении брокера).</p>
+      <table><thead><tr>
+        <th>Дата оферты</th><th>Бумага</th><th class="num">Кол-во</th>
+        <th class="num">Дней осталось</th><th class="num">Цена сейчас, %</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
   } catch { /* не критично */ }
 }
