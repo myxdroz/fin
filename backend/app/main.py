@@ -52,6 +52,15 @@ app.include_router(strategy.router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 
+@app.middleware("http")
+async def no_cache_frontend(request, call_next):
+    """Не кешировать фронтенд — чтобы обновления доезжали без Ctrl+F5."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     with open("app/templates/index.html", encoding="utf-8") as f:
