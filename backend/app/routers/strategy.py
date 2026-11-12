@@ -129,11 +129,18 @@ def rebalance(db: Session = Depends(get_db)):
         else:
             diff = tpos["amount"] - cur["value"]
             if diff > MIN_DIFF_RUB:
-                actions.append({**tpos, "action": "BUY",
-                                "amount": round(diff, 0),
-                                "held_qty": round(cur["qty"], 4),
-                                "qty": qty_for(tpos, diff),
-                                "note": f"есть {cur['qty']:g} шт, докупить"})
+                qty = qty_for(tpos, diff)
+                if qty <= 0:
+                    # разница есть, но на неё не купить ни одной бумаги
+                    actions.append({**tpos, "action": "HOLD", "amount": 0,
+                                    "held_qty": round(cur["qty"], 4), "qty": 0,
+                                    "note": "остаток меньше цены 1 шт — докупка не требуется"})
+                else:
+                    actions.append({**tpos, "action": "BUY",
+                                    "amount": round(diff, 0),
+                                    "held_qty": round(cur["qty"], 4),
+                                    "qty": qty,
+                                    "note": f"есть {cur['qty']:g} шт, докупить"})
             elif diff < -MIN_DIFF_RUB:
                 unit_price = cur["current_price"] or tpos["price"]
                 actions.append({**tpos, "action": "SELL",
