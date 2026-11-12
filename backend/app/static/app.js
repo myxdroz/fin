@@ -439,8 +439,11 @@ async function loadRebalance() {
   let r;
   try {
     const res = await fetch("/api/my/rebalance");
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.detail || res.status);
+    const text = await res.text();
+    let d;
+    try { d = JSON.parse(text); }
+    catch { throw new Error(`сервер вернул ошибку ${res.status} — попробуйте обновить страницу`); }
+    if (!res.ok) throw new Error(d.detail || `ошибка ${res.status}`);
     r = d;
   } catch (e) {
     $("#rebalanceBox").innerHTML = `<p class="muted">Ребалансировка: ${e.message}</p>`;
@@ -498,9 +501,9 @@ loadMyPortfolio = async function () {
       banner.innerHTML = `<span class="muted">Стратегия не сохранена. Задайте её на вкладке «Портфель» — тогда здесь появится ребалансировка.</span>`;
     }
   } catch { /* не критично */ }
-  loadTaxes();
-  loadHistory();
-  loadLots();
+  await loadTaxes();
+  await loadHistory();
+  await loadLots();
 };
 
 async function loadTaxes() {

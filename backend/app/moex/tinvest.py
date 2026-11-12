@@ -64,9 +64,11 @@ class TInvestDividends:
                 return resp.json()
             except httpx.HTTPStatusError as e:
                 last = e
-                if e.response.status_code < 500 or attempt == 2:
+                # 5xx — внутренние ошибки T-Invest; 429 — rate limit
+                retryable = e.response.status_code >= 500 or e.response.status_code == 429
+                if not retryable or attempt == 2:
                     raise
-                time.sleep(1.5 * (attempt + 1))
+                time.sleep(2.0 * (attempt + 1))
         raise last
 
     def shares_figi(self) -> dict[str, str]:
