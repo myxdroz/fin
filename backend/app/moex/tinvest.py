@@ -55,7 +55,7 @@ class TInvestDividends:
 
     def _post(self, service: str, method: str, body: dict) -> dict:
         url = f"{BASE}/{SERVICES[service]}/{method}"
-        # T-Invest иногда отдаёт 500 на тяжёлых запросах — пробуем до 3 раз
+        # T-Invest периодически падает (500) или таймаутит — пробуем до 3 раз с паузой
         last = None
         for attempt in range(3):
             try:
@@ -68,6 +68,12 @@ class TInvestDividends:
                 retryable = e.response.status_code >= 500 or e.response.status_code == 429
                 if not retryable or attempt == 2:
                     raise
+                time.sleep(2.0 * (attempt + 1))
+            except httpx.TransportError as e:  # таймауты, обрывы, DNS
+                last = e
+                if attempt == 2:
+                    raise
+                log.warning("T-Invest transport error (%s), retry %d", e, attempt + 1)
                 time.sleep(2.0 * (attempt + 1))
         raise last
 
