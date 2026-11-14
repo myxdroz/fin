@@ -17,6 +17,13 @@ services:
       FIN_KEY_RATE: "15.0"
       # опционально: токен T-Invest API (read-only) для официальных данных по дивидендам
       FIN_TINVEST_TOKEN: "${FIN_TINVEST_TOKEN:-}"
+      # опционально: Telegram-уведомления
+      FIN_TELEGRAM_TOKEN: "${FIN_TELEGRAM_TOKEN:-}"
+      FIN_TELEGRAM_CHAT: "${FIN_TELEGRAM_CHAT:-}"
+      FIN_NOTIFY_BOND_PREMIUM: "${FIN_NOTIFY_BOND_PREMIUM:-8.0}"
+      # basic auth (задаётся deploy.sh или вручную; пусто = без защиты)
+      FIN_AUTH_LOGIN: "${FIN_AUTH_LOGIN:-}"
+      FIN_AUTH_PASSWORD: "${FIN_AUTH_PASSWORD:-}"
 
 volumes:
   fin-data:

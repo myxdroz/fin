@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     telegram_chat: str = ""
     # порог для алерта «высокодоходная облигация»: ставка + N п.п.
     notify_bond_premium: float = 8.0
+    # basic auth (пусто = без защиты; deploy.sh просит задать)
+    auth_login: str = ""
+    auth_password: str = ""
 
 
 settings = Settings()

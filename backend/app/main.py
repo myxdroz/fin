@@ -1,11 +1,13 @@
+import base64
 import logging
+import secrets
 import threading
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
@@ -50,6 +52,27 @@ app.include_router(myportfolio.router)
 app.include_router(goals.router)
 app.include_router(strategy.router)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    """Basic auth для всего сервиса, кроме /api/health. Пустые логин/пароль = выключено."""
+    if not (settings.auth_login and settings.auth_password):
+        return await call_next(request)
+    if request.url.path == "/api/health":
+        return await call_next(request)
+    ok = False
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            login, pwd = base64.b64decode(auth[6:]).decode("utf-8").split(":", 1)
+            ok = (secrets.compare_digest(login, settings.auth_login)
+                  and secrets.compare_digest(pwd, settings.auth_password))
+        except Exception:
+            ok = False
+    if not ok:
+        return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="fin"'})
+    return await call_next(request)
 
 
 @app.middleware("http")

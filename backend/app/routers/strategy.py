@@ -100,6 +100,7 @@ def rebalance(budget_mode: bool = False, db: Session = Depends(get_db)):
             "type": p["type"],
             "value": p["current_price"] * p["quantity"],
             "qty": p["quantity"],
+            "current_price": p["current_price"],
         }
 
     # целевые позиции единым списком

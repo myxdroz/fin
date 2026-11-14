@@ -168,6 +168,8 @@ $("#portfolioForm").addEventListener("submit", async (e) => {
 
 function renderPortfolio(r) {
   $("#portfolioDesc").textContent = r.description;
+  const bondsTotal = r.bonds.reduce((s, b) => s + b.amount, 0);
+  const sharesTotal = r.shares.reduce((s, x) => x.amount + s, 0);
   const bondRows = r.bonds.map(b => `
     <tr>
       <td><a href="${moexLink(b.secid)}" target="_blank">${b.secid}</a><br>
@@ -207,7 +209,7 @@ function renderPortfolio(r) {
     ${r.shares.length ? `<h3>Акции (${r.shares.length})</h3>
     <table><thead><tr><th>Бумага</th><th class="num" title="Доля внутри акционной части портфеля">Доля*</th><th class="num">Сумма, ₽</th><th class="num">Кол-во</th><th class="num">Цена, ₽</th><th class="num">Див. доходн., %</th></tr></thead>
     <tbody>${shareRows}</tbody></table>
-    <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${r.bonds.length ? fmt(r.bonds[0].amount * r.bonds.length / r.amount * 100, 0) : 0}% / акции ${r.shares.length ? fmt(r.shares[0].amount * r.shares.length / r.amount * 100, 0) : 0}% от ${fmt(r.amount, 0)} ₽.${
+    <p class="muted">* «Доля» — распределение внутри класса активов. Общая структура: облигации ${fmt(bondsTotal / r.amount * 100, 0)}% / акции ${fmt(sharesTotal / r.amount * 100, 0)}% от ${fmt(r.amount, 0)} ₽.${
       r.bonds.some(b => b.flags && b.flags.offer) ? " Доходность по бумагам с офертой посчитана до даты оферты." : ""
     }${
       r.bonds.some(b => b.flags && b.flags.floating) ? " Флоатеры: доходность условна (купон пересматривается со ставкой)." : ""
@@ -223,7 +225,25 @@ async function loadMyPortfolio() {
   $("#myPortfolioResult").innerHTML = "<p class='muted'>Загрузка…</p>";
   let accounts;
   try {
-    accounts = (await (await fetch("/api/my/accounts")).json()).accounts;
+    const res = await fetch("/api/my/accounts");
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      $("#myAccounts").innerHTML = "";
+      $("#myPortfolioResult").innerHTML = `
+        <div class="card">
+          <h2>Токен T-Invest не настроен</h2>
+          <p class="muted">${d.detail || "Данные брокера недоступны."}</p>
+          <p>Чтобы включить этот раздел:</p>
+          <ol class="muted">
+            <li>Создайте токен на <a href="https://www.tbank.ru/invest/settings/api" target="_blank">tbank.ru/invest/settings/api</a> (доступ: «только чтение»);</li>
+            <li>На сервере добавьте строку <code>FIN_TINVEST_TOKEN=ваш_токен</code> в файл /opt/fin/.env;</li>
+            <li>Перезапустите: <code>cd /opt/fin && docker compose up -d</code>.</li>
+          </ol>
+          <p class="muted">Без токена работают скринеры, подбор портфеля и вкладка «Цели».</p>
+        </div>`;
+      return;
+    }
+    accounts = (await res.json()).accounts;
   } catch (e) {
     $("#myPortfolioResult").innerHTML = `<p class="muted">Не удалось получить счета: ${e.message}</p>`;
     return;
@@ -245,6 +265,24 @@ async function loadMyPortfolio() {
     reloadMyPortfolio();
   });
   await reloadMyPortfolio();
+  await loadStrategyBanner();
+  await loadTaxes();
+  await loadHistory();
+  await loadLots();
+  await loadOffers();
+}
+
+async function loadStrategyBanner() {
+  try {
+    const r = await (await fetch("/api/strategy")).json();
+    const banner = $("#myStrategyBanner");
+    if (r.strategy) {
+      banner.innerHTML = `Применена стратегия: <b>${r.strategy.profile_label}</b>, ` +
+        `${fmt(r.strategy.amount, 0)} ₽ <span class="muted">(сохранена ${r.strategy.updated_at.slice(0, 10)})</span>`;
+    } else {
+      banner.innerHTML = `<span class="muted">Стратегия не сохранена. Задайте её на вкладке «Портфель» — тогда здесь появится ребалансировка.</span>`;
+    }
+  } catch { /* не критично */ }
 }
 
 async function reloadMyPortfolio() {
@@ -502,27 +540,6 @@ function showToast(msg, isError = false) {
   clearTimeout(el._timer);
   el._timer = setTimeout(() => el.classList.remove("show"), 3000);
 }
-
-// --- упоминание стратегии в «Моём портфеле» + налоги + история ---
-const _origLoadMyPortfolio = loadMyPortfolio;
-loadMyPortfolio = async function () {
-  await _origLoadMyPortfolio();
-  // баннер стратегии
-  try {
-    const r = await (await fetch("/api/strategy")).json();
-    const banner = $("#myStrategyBanner");
-    if (r.strategy) {
-      banner.innerHTML = `Применена стратегия: <b>${r.strategy.profile_label}</b>, ` +
-        `${fmt(r.strategy.amount, 0)} ₽ <span class="muted">(сохранена ${r.strategy.updated_at.slice(0, 10)})</span>`;
-    } else {
-      banner.innerHTML = `<span class="muted">Стратегия не сохранена. Задайте её на вкладке «Портфель» — тогда здесь появится ребалансировка.</span>`;
-    }
-  } catch { /* не критично */ }
-  await loadTaxes();
-  await loadHistory();
-  await loadLots();
-  await loadOffers();
-};
 
 async function loadTaxes() {
   const box = $("#taxesBox");

@@ -68,11 +68,31 @@ else
   c_warn "Работаем без токена T-Invest: раздел «Мой портфель» и лоты будут недоступны (нужен токен)."
 fi
 
-# ---------------------------------------------------------------- 4. .env
+# ---------------------------------------------------------------- 4. .env и доступ
+step "Защита доступа (basic auth)"
+printf 'Логин для входа на сайт [fin]: '
+read -r AUTH_LOGIN
+AUTH_LOGIN="${AUTH_LOGIN:-fin}"
+printf 'Пароль (ввод скрыт; Enter = без защиты, не рекомендуется для доступа извне): '
+read -r -s AUTH_PASSWORD
+printf '\n'
+if [ -z "$AUTH_PASSWORD" ]; then
+  c_warn "Без пароля: сервис открыт всем в вашей сети. Можно задать позже в $INSTALL_DIR/.env (FIN_AUTH_LOGIN/FIN_AUTH_PASSWORD)."
+fi
+
 step "Запись конфигурации (.env)"
+# при повторном запуске сохраняем уже настроенные секреты
+if [ -z "$TINVEST_TOKEN" ] && [ -f "$INSTALL_DIR/.env" ]; then
+  TINVEST_TOKEN="$(grep '^FIN_TINVEST_TOKEN=' "$INSTALL_DIR/.env" | cut -d= -f2- || true)"
+fi
+if [ -z "$AUTH_PASSWORD" ] && [ -f "$INSTALL_DIR/.env" ]; then
+  AUTH_PASSWORD="$(grep '^FIN_AUTH_PASSWORD=' "$INSTALL_DIR/.env" | cut -d= -f2- || true)"
+fi
 {
   echo "# сгенерировано deploy.sh $(date -Iseconds)"
   [ -n "$TINVEST_TOKEN" ] && echo "FIN_TINVEST_TOKEN=$TINVEST_TOKEN"
+  echo "FIN_AUTH_LOGIN=$AUTH_LOGIN"
+  [ -n "$AUTH_PASSWORD" ] && echo "FIN_AUTH_PASSWORD=$AUTH_PASSWORD"
 } > "$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
 c_ok ".env готов"
