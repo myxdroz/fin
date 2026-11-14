@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..models import Bond, Dividend, Share
 
 
@@ -30,6 +31,50 @@ class ShareFilter(BaseModel):
     min_liquidity: float = 50_000_000  # мин. дневной оборот, руб
     list_level: int = 1
     limit: int = Field(default=50, le=200)
+
+
+def bond_red_flags(b: Bond, key_rate: float) -> list[str]:
+    """Красные флаги риска — «почему НЕ покупать». Не вердикт, а повод проверить."""
+    flags = []
+    if not b.is_ofz:
+        if b.list_level == 3:
+            flags.append("3-й уровень листинга")
+        elif b.list_level == 0:
+            flags.append("нет уровня листинга")
+        if b.val_today < 1_000_000:
+            flags.append("низкий оборот (<1 млн ₽/день)")
+        if b.issue_size and b.issue_size * b.face_value < 500_000_000:
+            flags.append("малый выпуск (<500 млн ₽)")
+        if b.yield_at_pricing > key_rate + 10:
+            flags.append(f"доходность на {b.yield_at_pricing - key_rate:.0f} п.п. выше ставки — высокий кредитный риск")
+    if b.duration > 7 * 365:
+        flags.append("высокая дюрация (>7 лет)")
+    if b.last_price > 100:
+        flags.append("цена выше номинала")
+    if b.floating_flag:
+        flags.append("плавающий купон")
+    if b.amort_flag:
+        flags.append("амортизация номинала")
+    if b.offer_flag:
+        flags.append("есть оферта")
+    return flags
+
+
+def bond_reliability(b: Bond, key_rate: float) -> int:
+    """Прокси кредитного качества 1–5 на данных MOEX (5 = ОФЗ). Не рейтинг рейтингового агентства."""
+    if b.is_ofz:
+        score = 5
+    elif b.list_level == 1:
+        score = 4
+    elif b.list_level == 2:
+        score = 3
+    elif b.list_level == 3:
+        score = 2
+    else:
+        score = 1
+    if not b.is_ofz and b.yield_at_pricing > key_rate + 10:
+        score -= 1  # «мусорная» премия к ставке
+    return max(score, 1)
 
 
 def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
@@ -70,6 +115,7 @@ def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
             "is_ofz": bool(b.is_ofz),
             "price": round(b.last_price, 2),
             "yield": round(b.yield_at_pricing, 2),
+            "yield_after_tax": round(b.yield_at_pricing * 0.87, 2),
             "duration_years": round(b.duration / 365, 2),
             "coupon_percent": b.coupon_percent,
             "coupon_period_days": b.coupon_period,
@@ -79,6 +125,8 @@ def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
             "list_level": b.list_level,
             "face_value": b.face_value,
             "val_today": b.val_today,
+            "reliability": bond_reliability(b, settings.key_rate),
+            "red_flags": bond_red_flags(b, settings.key_rate),
             "flags": {
                 "offer": bool(b.offer_flag),
                 "floating": bool(b.floating_flag),

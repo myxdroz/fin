@@ -99,3 +99,22 @@ footer { margin-top: 36px; color: var(--muted); font-size: 12px; border-top: 1px
 .toast.error { background: #7f1d1d; color: #f87171; }
 
 .sell-qty { color: #f87171; }
+
+.badge.warn { background: #78350f; color: #fbbf24; cursor: help; }
+
+@media (max-width: 900px) {
+  body { padding: 0 8px 30px; }
+  .card { padding: 12px 14px; }
+  header h1 { font-size: 21px; }
+  .tabs { overflow-x: auto; }
+  .tab { padding: 9px 11px; font-size: 14px; white-space: nowrap; }
+  table { display: block; overflow-x: auto; font-size: 12.5px; }
+  th, td { padding: 7px 9px; }
+  .summary { gap: 10px; }
+  .summary .stat { padding: 10px 14px; }
+  .summary .stat .v { font-size: 18px; }
+  form label input, form label select { min-width: 100px; }
+  .grid-form { grid-template-columns: 1fr 1fr; }
+  .donut-wrap { gap: 14px; }
+  .meta { font-size: 12.5px; gap: 10px; }
+}

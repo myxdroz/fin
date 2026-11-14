@@ -153,6 +153,11 @@ def _pick_bonds(db, cfg: dict, amount: float, target: float) -> list[dict]:
     return picked
 
 
+def _share_group(ticker: str) -> str:
+    """Группа эмитента для лимита концентрации (SBER/SBERP — один эмитент)."""
+    return ticker.rstrip("P")
+
+
 def _pick_shares(db, cfg: dict, amount: float, target: float) -> list[dict]:
     if not cfg["share_limit"]:
         return []
@@ -174,12 +179,23 @@ def _pick_shares(db, cfg: dict, amount: float, target: float) -> list[dict]:
     elif cfg.get("blue_chips"):
         candidates = [s for s in candidates if s["secid"] in BLUE_CHIPS]
         candidates.sort(key=lambda x: -x["val_today"])
-    # Позиций ровно столько, чтобы на каждую хватило хотя бы на один лот
+    # Позиций ровно столько, чтобы на каждую хватило хотя бы на один лот.
+    # Лимит на эмитента (SBER/SBERP и т.п. — одна группа): 1 для качественных, 2 для агрессивных.
+    cap = 1 if cfg["only_quality"] else 2
     n = min(cfg["share_limit"], len(candidates))
     picked: list[dict] = []
     while n >= 1:
-        picked = candidates[:n]
-        if all(s["lot_cost"] <= target / n for s in picked):
+        picked = []
+        groups: dict[str, int] = {}
+        for s in candidates:
+            if len(picked) >= n:
+                break
+            g = _share_group(s["secid"])
+            if groups.get(g, 0) >= cap:
+                continue
+            groups[g] = groups.get(g, 0) + 1
+            picked.append(s)
+        if picked and all(s["lot_cost"] <= target / len(picked) for s in picked):
             break
         n -= 1
     if cfg.get("blue_chips") and imoex and picked:
@@ -225,6 +241,8 @@ def build_portfolio(db, req: PortfolioRequest) -> dict:
         "key_rate": settings.key_rate,
         "expected_yield": round(expected, 2),
         "expected_income_year": round(req.amount * expected / 100, 0),
+        "expected_yield_net": round(expected * 0.87, 2),
+        "expected_income_year_net": round(req.amount * expected * 0.87 / 100, 0),
         "bonds": bonds,
         "shares": shares,
         "disclaimer": "Расчёт на основе текущих данных MOEX. Это не индивидуальная инвестиционная "

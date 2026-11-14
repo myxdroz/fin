@@ -59,6 +59,7 @@ $("#bondsForm").addEventListener("submit", async (e) => {
   const f = new FormData(e.target);
   const body = {
     min_yield: +f.get("min_yield"),
+    max_yield: +f.get("max_yield"),
     max_duration: Math.round(+f.get("max_duration_years") * 365),
     min_liquidity: +f.get("min_liq_mln") * 1e6,
     max_price: +f.get("max_price"),
@@ -82,15 +83,19 @@ function renderBonds(items, keyRate) {
     $("#bondsResult").innerHTML = "<p class='muted'>Ничего не найдено по заданным фильтрам.</p>";
     return;
   }
+  const stars = (r) => "★".repeat(r) + "☆".repeat(5 - r);
   const rows = items.map(b => `
     <tr>
       <td><a href="${moexLink(b.secid)}" target="_blank">${b.secid}</a><br>
           <span class="muted">${b.shortname}</span>
           ${b.is_ofz ? '<span class="badge">ОФЗ</span>' : ""}
           ${b.flags.floating ? '<span class="badge">флоатер</span>' : ""}
-          ${b.flags.offer ? '<span class="badge">оферта</span>' : ""}</td>
+          ${b.flags.offer ? '<span class="badge">оферта</span>' : ""}
+          ${b.red_flags && b.red_flags.length ? `<span class="badge warn" title="${b.red_flags.join(" • ")}">⚠ ${b.red_flags.length}</span>` : ""}</td>
+      <td class="num" title="Прокси кредитного качества на данных MOEX (5 = ОФЗ)">${stars(b.reliability)}</td>
       <td class="num">${fmt(b.price)}</td>
       <td class="num yield">${fmt(b.yield)}</td>
+      <td class="num muted">${fmt(b.yield_after_tax)}</td>
       <td class="num">${fmt(b.yield - (keyRate || 0))}</td>
       <td class="num">${fmt(b.duration_years, 1)}</td>
       <td class="num">${fmt(b.coupon_percent, 1)}</td>
@@ -99,10 +104,11 @@ function renderBonds(items, keyRate) {
       <td class="num">${(b.val_today / 1e6).toFixed(1)} млн</td>
     </tr>`).join("");
   $("#bondsResult").innerHTML = `
-    <p class="muted">Найдено: ${items.length}</p>
+    <p class="muted">Найдено: ${items.length}. «★★★★★» — прокси надёжности (5 = ОФЗ). Доходность после НДФЛ — при ставке 13%.</p>
     <table><thead><tr>
-      <th>Бумага</th><th>Цена, %</th><th>Доходность, %</th><th>к ставке, п.п.</th>
-      <th>Дюрация, лет</th><th>Купон, %</th><th>НКД</th><th>Погашение</th><th>Оборот</th>
+      <th>Бумага</th><th class="num">Надёжность</th><th class="num">Цена, %</th><th class="num">Доходность, %</th>
+      <th class="num">после налога</th><th class="num">к ставке, п.п.</th>
+      <th class="num">Дюрация, лет</th><th class="num">Купон, %</th><th class="num">НКД</th><th>Погашение</th><th class="num">Оборот</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -177,7 +183,8 @@ function renderPortfolio(r) {
           ${b.is_ofz ? ' <span class="badge">ОФЗ</span>' : ""}
           ${b.flags && b.flags.offer ? ` <span class="badge" title="Доходность посчитана до даты оферты">оферта ${b.offer_date || ""}</span>` : ""}
           ${b.flags && b.flags.floating ? ' <span class="badge" title="Купон привязан к ключевой ставке, пересматривается">флоатер</span>' : ""}
-          ${b.flags && b.flags.amort ? ' <span class="badge">амортизация</span>' : ""}</td>
+          ${b.flags && b.flags.amort ? ' <span class="badge">амортизация</span>' : ""}
+          ${b.red_flags && b.red_flags.length ? ` <span class="badge warn" title="${b.red_flags.join(" • ")}">⚠ ${b.red_flags.length}</span>` : ""}</td>
       <td class="num">${b.weight}%</td>
       <td class="num">${fmt(b.amount, 0)}</td>
       <td class="num">${b.approx_qty}</td>
@@ -199,8 +206,9 @@ function renderPortfolio(r) {
 
   $("#portfolioResult").innerHTML = `
     <div class="summary">
-      <div class="stat"><div class="v yield">${fmt(r.expected_yield)}%</div><div class="k">Ожидаемая доходность портфеля</div></div>
+      <div class="stat"><div class="v yield">${fmt(r.expected_yield)}%</div><div class="k">Ожидаемая купонная/дивидендная доходность</div></div>
       <div class="stat"><div class="v">${fmt(r.expected_income_year, 0)} ₽</div><div class="k">Ожидаемый доход за год</div></div>
+      <div class="stat"><div class="v">${fmt(r.expected_yield_net)}%</div><div class="k">После НДФЛ 13%: ${fmt(r.expected_income_year_net, 0)} ₽/год</div></div>
       <div class="stat"><div class="v">${fmt(r.key_rate, 1)}%</div><div class="k">Ключевая ставка ЦБ (бенчмарк)</div></div>
     </div>
     ${r.bonds.length ? `<h3>Облигации (${r.bonds.length})</h3>
