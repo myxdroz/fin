@@ -72,6 +72,8 @@ $("#bondsForm").addEventListener("submit", async (e) => {
   $("#bondsResult").innerHTML = "<p class='muted'>Загрузка…</p>";
   try {
     const r = await api("/api/bonds", body);
+    _bondCache = r.items;
+    _lastKeyRate = r.key_rate;
     renderBonds(r.items, r.key_rate);
   } catch (err) {
     $("#bondsResult").innerHTML = `<p class="muted">Ошибка: ${err.message}</p>`;
@@ -83,6 +85,7 @@ function renderBonds(items, keyRate) {
     $("#bondsResult").innerHTML = "<p class='muted'>Ничего не найдено по заданным фильтрам.</p>";
     return;
   }
+  const wl = _watchSet || new Set();
   const stars = (r) => "★".repeat(r) + "☆".repeat(5 - r);
   const rows = items.map(b => `
     <tr>
@@ -92,6 +95,9 @@ function renderBonds(items, keyRate) {
           ${b.flags.floating ? '<span class="badge">флоатер</span>' : ""}
           ${b.flags.offer ? '<span class="badge">оферта</span>' : ""}
           ${b.red_flags && b.red_flags.length ? `<span class="badge warn" title="${b.red_flags.join(" • ")}">⚠ ${b.red_flags.length}</span>` : ""}</td>
+      <td class="num">${b.score ?? "—"}</td>
+      <td>${verdictCell(b.verdict)}</td>
+      <td><button class="star ${wl.has(b.secid) ? "on" : ""}" title="В watchlist" onclick="starBond('${b.secid}', ${b.price})">★</button></td>
       <td class="num" title="Прокси кредитного качества на данных MOEX (5 = ОФЗ)">${stars(b.reliability)}</td>
       <td class="num">${fmt(b.price)}</td>
       <td class="num yield">${fmt(b.yield)}</td>
@@ -104,13 +110,34 @@ function renderBonds(items, keyRate) {
       <td class="num">${(b.val_today / 1e6).toFixed(1)} млн</td>
     </tr>`).join("");
   $("#bondsResult").innerHTML = `
-    <p class="muted">Найдено: ${items.length}. «★★★★★» — прокси надёжности (5 = ОФЗ). Доходность после НДФЛ — при ставке 13%.</p>
-    <table><thead><tr>
-      <th>Бумага</th><th class="num">Надёжность</th><th class="num">Цена, %</th><th class="num">Доходность, %</th>
-      <th class="num">после налога</th><th class="num">к ставке, п.п.</th>
-      <th class="num">Дюрация, лет</th><th class="num">Купон, %</th><th class="num">НКД</th><th>Погашение</th><th class="num">Оборот</th>
+    <p class="muted">Найдено: ${items.length}. «★★★★★» — прокси надёжности (5 = ОФЗ). Доходность после НДФЛ — при ставке 13%. Клик по заголовку — сортировка.</p>
+    <input type="text" id="bondSearch" placeholder="Поиск по тикеру или названию…" style="margin-bottom:10px; min-width:260px">
+    <table><thead id="bondsThead"><tr>
+      <th data-key="shortname">Бумага</th><th class="num" data-key="score">Скоринг</th><th data-key="verdict">Вердикт</th><th data-no-sort="1">☆</th>
+      <th class="num" data-key="reliability">Надёжность</th><th class="num" data-key="price">Цена, %</th><th class="num" data-key="yield">Доходность, %</th>
+      <th class="num" data-key="yield_after_tax">после налога</th><th class="num" data-key="pp">к ставке, п.п.</th>
+      <th class="num" data-key="duration_years">Дюрация, лет</th><th class="num" data-key="coupon_percent">Купон, %</th><th class="num" data-key="accr_int">НКД</th>
+      <th data-key="mat_date">Погашение</th><th class="num" data-key="val_today">Оборот</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
+  const search = $("#bondSearch");
+  search.value = _bondSearch || "";
+  search.addEventListener("input", () => {
+    _bondSearch = search.value;
+    renderBonds(filterBySearch(_bondCache, _bondSearch), keyRate);
+    $("#bondSearch").focus();
+    const s = $("#bondSearch"); s.setSelectionRange(s.value.length, s.value.length);
+  });
+  makeSortable("#bondsThead", items, (sorted) => renderBonds(sorted, keyRate));
 }
+
+let _watchSet = null, _bondSearch = "";
+loadWatchlist().then(s => { _watchSet = s; });
+
+async function starBond(secid, price) {
+  _watchSet = await toggleWatch(secid, price);
+  if (_bondCache.length) renderBonds(filterBySearch(_bondCache, _bondSearch), _lastKeyRate);
+}
+let _lastKeyRate = 15;
 
 // --- акции ---
 $("#sharesForm").addEventListener("submit", async (e) => {
@@ -136,22 +163,47 @@ function renderShares(items) {
     $("#sharesResult").innerHTML = "<p class='muted'>Ничего не найдено.</p>";
     return;
   }
+  _shareCache = items;
+  const wl = _watchSet || new Set();
   const rows = items.map(s => `
     <tr>
       <td><a href="${moexLink(s.secid)}" target="_blank">${s.secid}</a><br>
-          <span class="muted">${s.shortname}</span></td>
+          <span class="muted">${s.shortname}</span>
+          ${s.in_index ? '<span class="badge">IMOEX</span>' : ""}
+          ${s.div_stable ? '<span class="badge" title="Дивиденды платят 4+ лет из 5">стаб. див.</span>' : ""}</td>
+      <td class="num">${s.score ?? "—"}</td>
+      <td>${verdictCell(s.verdict)}</td>
+      <td><button class="star ${wl.has(s.secid) ? "on" : ""}" title="В watchlist" onclick="starShare('${s.secid}', ${s.price})">★</button></td>
       <td class="num">${fmt(s.price)}</td>
       <td class="num yield">${fmt(s.div_yield_12m)}</td>
+      <td class="num">${s.div_years_5y}/5</td>
       <td class="num">${fmt(s.dividends_12m)}</td>
       <td class="num">${fmt(s.lot_cost, 0)}</td>
       <td class="num">${(s.val_today / 1e6).toFixed(0)} млн</td>
     </tr>`).join("");
   $("#sharesResult").innerHTML = `
-    <p class="muted">Найдено: ${items.length}. Див. доходность — по выплатам за последние 12 месяцев к текущей цене.</p>
-    <table><thead><tr>
-      <th>Бумага</th><th>Цена, ₽</th><th>Див. доходность, %</th><th>Дивиденды 12м, ₽</th>
-      <th>Стоимость лота, ₽</th><th>Оборот</th>
+    <p class="muted">Найдено: ${items.length}. Сортировка по скорингу. «Див. лет/5» — сколько лет из последних 5 были выплаты.</p>
+    <input type="text" id="shareSearch" placeholder="Поиск по тикеру или названию…" style="margin-bottom:10px; min-width:260px">
+    <table><thead id="sharesThead"><tr>
+      <th data-key="shortname">Бумага</th><th class="num" data-key="score">Скоринг</th><th data-key="verdict">Вердикт</th><th data-no-sort="1">☆</th>
+      <th class="num" data-key="price">Цена, ₽</th><th class="num" data-key="div_yield_12m">Див. доходность, %</th>
+      <th class="num" data-key="div_years_5y">Див. лет/5</th><th class="num" data-key="dividends_12m">Дивиденды 12м, ₽</th>
+      <th class="num" data-key="lot_cost">Стоимость лота, ₽</th><th class="num" data-key="val_today">Оборот</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
+  const search = $("#shareSearch");
+  search.value = _shareSearch || "";
+  search.addEventListener("input", () => {
+    _shareSearch = search.value;
+    renderShares(filterBySearch(_shareCache, _shareSearch));
+    const s = $("#shareSearch"); s.focus(); s.setSelectionRange(s.value.length, s.value.length);
+  });
+  makeSortable("#sharesThead", items, renderShares);
+}
+
+let _shareSearch = "";
+async function starShare(secid, price) {
+  _watchSet = await toggleWatch(secid, price);
+  if (_shareCache.length) renderShares(filterBySearch(_shareCache, _shareSearch));
 }
 
 // --- портфель ---
@@ -223,7 +275,9 @@ function renderPortfolio(r) {
       r.bonds.some(b => b.flags && b.flags.floating) ? " Флоатеры: доходность условна (купон пересматривается со ставкой)." : ""
     }</p>` : ""}
     <p class="muted" style="margin-top:14px">${r.disclaimer}</p>
-    <button class="btn-secondary" onclick="exportPortfolioCSV()">Экспорт CSV</button>`;
+    <button class="btn-secondary" onclick="exportPortfolioCSV()">Экспорт CSV</button>
+    <button class="btn-secondary" onclick="showCouponflow()">Прогноз выплат на 12 мес</button>
+    <div id="couponflowBox" style="margin-top:16px"></div>`;
 }
 
 // --- мой портфель (Т-Банк) ---
@@ -274,6 +328,7 @@ async function loadMyPortfolio() {
   });
   await reloadMyPortfolio();
   await loadStrategyBanner();
+  await loadRisk();
   await loadTaxes();
   await loadHistory();
   await loadLots();
@@ -341,6 +396,7 @@ function renderMyPortfolio(pf) {
     <div id="rebalanceBox" style="margin-top:22px"></div>
     <div id="incomeCalendar"></div>
     <div id="offersBox" style="margin-top:22px"></div>
+    <div id="riskBox" style="margin-top:22px"></div>
     <div id="taxesBox" style="margin-top:22px"></div>
     <div id="historyBox" style="margin-top:22px"></div>
     <div id="lotsBox" style="margin-top:22px"></div>`;
@@ -384,8 +440,12 @@ async function loadGoals() {
     return;
   }
   $("#capitalGoalInput").value = g.capital_goal;
+  $("#inflationInput").value = g.benchmarks.inflation;
+  $("#depositInput").value = g.benchmarks.deposit;
   $("#goalAssumption").textContent =
-    `Цель дохода считается как: ${g.goal_income.assumption} → ${g.goal_income.annual_pct}% годовых`;
+    `Цель дохода считается как: ${g.goal_income.assumption} → ${g.goal_income.annual_pct}% годовых. ` +
+    `Вклад ~${fmt(g.benchmarks.deposit, 1)}%, инфляция ~${fmt(g.benchmarks.inflation, 1)}% → ` +
+    `реальная доходность цели ${fmt(g.benchmarks.goal_real_pct, 1)}% против ${fmt(g.benchmarks.deposit_real_pct, 1)}% по вкладу.`;
 
   const cur = g.current || {};
   const curValue = cur.value != null ? `${fmt(cur.value, 0)} ₽` : "—";
@@ -429,6 +489,15 @@ $("#goalsForm").addEventListener("submit", async (e) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ value: +$("#capitalGoalInput").value }),
   });
+  await fetch("/api/goals/benchmarks", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      inflation: +$("#inflationInput").value,
+      deposit: +$("#depositInput").value,
+    }),
+  });
+  showToast("Цели и бенчмарки сохранены ✓");
   loadGoals();
 });
 
@@ -680,4 +749,124 @@ async function loadOffers() {
         <th class="num">Дней осталось</th><th class="num">Цена сейчас, %</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
   } catch { /* не критично */ }
+}
+
+// --- Этап 2: вердикты/поиск/сортировка, риск-панель, купонный поток, бенчмарки, watchlist ---
+const VERDICT_BADGE = {
+  "Привлекательно": "verdict-good",
+  "Нейтрально": "verdict-mid",
+  "Рискованно": "verdict-bad",
+};
+let _bondCache = [], _shareCache = [];
+
+function verdictCell(v) {
+  return `<span class="badge ${VERDICT_BADGE[v] || ""}">${v}</span>`;
+}
+
+function makeSortable(theadSel, rows, renderFn, containerSel) {
+  document.querySelectorAll(theadSel + " th").forEach((th, idx) => {
+    if (th.dataset.noSort) return;
+    th.style.cursor = "pointer";
+    th.addEventListener("click", () => {
+      const key = th.dataset.key || idx;
+      const cur = th.dataset.dir === "asc" ? "desc" : "asc";
+      document.querySelectorAll(theadSel + " th").forEach(h => delete h.dataset.dir);
+      th.dataset.dir = cur;
+      const val = (r) => {
+        const v = key.split(".").reduce((o, k) => o?.[k], r);
+        return typeof v === "string" ? v.toLowerCase() : (v ?? -1e18);
+      };
+      rows.sort((a, b) => {
+        const va = val(a), vb = val(b);
+        const c = (typeof va === "number" && typeof vb === "number")
+          ? va - vb : String(va).localeCompare(String(vb), "ru");
+        return cur === "asc" ? c : -c;
+      });
+      renderFn(rows);
+    });
+  });
+}
+
+function filterBySearch(rows, query) {
+  if (!query) return rows;
+  const q = query.toLowerCase();
+  return rows.filter(r => r.secid.toLowerCase().includes(q) || (r.shortname || "").toLowerCase().includes(q));
+}
+
+async function loadWatchlist() {
+  try {
+    const r = await (await fetch("/api/watchlist")).json();
+    return new Set((r.items || []).map(i => i.secid));
+  } catch { return new Set(); }
+}
+
+async function toggleWatch(secid, price) {
+  const wl = await loadWatchlist();
+  if (wl.has(secid)) {
+    await fetch(`/api/watchlist/${secid}`, { method: "DELETE" });
+    showToast(`${secid} убран из watchlist`);
+  } else {
+    await fetch("/api/watchlist", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secid, price }),
+    });
+    showToast(`${secid} добавлен в watchlist 👀`);
+  }
+  return loadWatchlist();
+}
+
+// --- риск-панель ---
+async function loadRisk() {
+  const box = $("#riskBox");
+  if (!myAccountId || !box) return;
+  try {
+    const res = await fetch(`/api/my/risk?account_id=${myAccountId}`);
+    if (!res.ok) return;
+    const r = await res.json();
+    const warn = r.warnings.map(w => `<p class="warn-line">⚠ ${w}</p>`).join("");
+    box.innerHTML = `
+      <h3>Риск-панель</h3>
+      <div class="summary">
+        <div class="stat"><div class="v">${fmt(r.avg_duration_years, 1)}</div><div class="k">Дюрация облигаций, лет</div></div>
+        <div class="stat"><div class="v">${fmt(r.bond_share, 0)}%</div><div class="k">Доля облигаций</div></div>
+      </div>
+      ${warn}
+      <p class="muted">Эмитенты: ${r.top_issuers.map(i => `${i.name} <b>${i.pct}%</b>`).join(", ")}</p>
+      <p class="muted">Отрасли: ${r.top_sectors.map(i => `${i.name} <b>${i.pct}%</b>`).join(", ")}</p>`;
+  } catch { /* не критично */ }
+}
+
+// --- купонный поток подобранного портфеля ---
+async function showCouponflow() {
+  if (!lastPortfolio) return;
+  if (!myAccountId) {
+    try {
+      const a = await (await fetch("/api/my/accounts")).json();
+      if (!a.accounts || !a.accounts.length) throw new Error("нет счетов");
+      myAccountId = a.accounts[0].id;
+    } catch {
+      showToast("Прогноз выплат: нужен токен T-Invest (см. вкладку «Мой портфель»)", true);
+      return;
+    }
+  }
+  showToast("Считаю прогноз выплат…");
+  const items = [
+    ...lastPortfolio.bonds.map(b => ({ secid: b.secid, qty: b.approx_qty, type: "bond" })),
+    ...lastPortfolio.shares.map(s => ({ secid: s.secid, qty: s.approx_qty, type: "share" })),
+  ];
+  try {
+    const res = await fetch(`/api/my/couponflow?account_id=${myAccountId}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) throw new Error(`ошибка ${res.status} (нужен токен T-Invest)`);
+    const d = await res.json();
+    const rows = d.months.map(m => `
+      <tr><td>${m.month}</td><td class="num yield">${fmt(m.amount, 0)} ₽</td></tr>`).join("");
+    $("#couponflowBox").innerHTML = `
+      <h3>Выплаты по подобранному портфелю, 12 мес: ${fmt(d.total, 0)} ₽</h3>
+      <table><thead><tr><th>Месяц</th><th class="num">Сумма</th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    showToast(`Прогноз выплат: ${e.message}`, true);
+  }
 }

@@ -1,6 +1,7 @@
 """Раздел «Мой портфель»: реальные позиции и календарь выплат по счёту Т-Банка."""
 
 import logging
+import time
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -280,3 +281,108 @@ def get_offers(account_id: str = Query(...), db: Session = Depends(get_db)):
         })
     events.sort(key=lambda e: e["offer_date"])
     return {"events": events}
+
+
+@router.get("/risk")
+def get_risk(account_id: str = Query(...), db: Session = Depends(get_db)):
+    """Риск-панель портфеля: дюрация, концентрация по эмитентам и отраслям."""
+    from ..models import Bond, Share
+    from .goals import SECTOR_MAP
+
+    def share_group(t: str) -> str:
+        return t.rstrip("P")
+
+    t = _client()
+    try:
+        pf = t.portfolio(account_id)
+        figi_map = t.instruments_by_figi()
+    finally:
+        t.close()
+
+    total = pf["total"] or 1.0
+    bond_value = 0.0
+    w_duration = 0.0
+    issuer_conc: dict[str, float] = {}
+    sector_conc: dict[str, float] = {}
+    warnings = []
+
+    for p in pf["positions"]:
+        if p["type"] == "currency":
+            continue
+        value = p["current_price"] * p["quantity"]
+        ticker = figi_map.get(p["figi"], {}).get("ticker", "")
+        if p["type"] == "currency":
+            ticker = p["figi"][:3]
+        if not ticker:
+            continue
+        if p["type"] == "bond":
+            bond = db.get(Bond, ticker)
+            bond_value += value
+            if bond:
+                w_duration += bond.duration / 365 * value
+                issuer = bond.shortname.split()[0]
+                issuer_conc[issuer] = issuer_conc.get(issuer, 0) + value
+                sector_conc["Облигации"] = sector_conc.get("Облигации", 0) + value
+            continue
+        group = share_group(ticker)
+        issuer_conc[group] = issuer_conc.get(group, 0) + value
+        sector_conc[SECTOR_MAP.get(ticker, "Прочее")] = sector_conc.get(
+            SECTOR_MAP.get(ticker, "Прочее"), 0) + value
+
+    top_issuers = [
+        {"name": k, "pct": round(v / total * 100, 1)}
+        for k, v in sorted(issuer_conc.items(), key=lambda kv: -kv[1])[:5]
+    ]
+    for i in top_issuers:
+        if i["pct"] > 25:
+            warnings.append(f"Концентрация на «{i['name']}»: {i['pct']}% портфеля")
+
+    avg_duration = round(w_duration / bond_value, 2) if bond_value else 0.0
+    if avg_duration > 5:
+        warnings.append(f"Высокая дюрация облигаций: {avg_duration} лет — чувствительность к ставке")
+
+    return {
+        "avg_duration_years": avg_duration,
+        "bond_share": round(bond_value / total * 100, 1),
+        "top_issuers": top_issuers,
+        "top_sectors": [
+            {"name": k, "pct": round(v / total * 100, 1)}
+            for k, v in sorted(sector_conc.items(), key=lambda kv: -kv[1])[:6]
+        ],
+        "warnings": warnings,
+    }
+
+
+@router.post("/couponflow")
+def couponflow(body: dict, account_id: str = Query(...)):
+    """Прогноз выплат по месяцам (12 мес) для набора бумаг: облигации + акции.
+
+    body: {"items": [{"secid": "...", "qty": N, "type": "bond"|"share"}]}
+    """
+    t = _client()
+    try:
+        ticker_figi = t.figi_by_ticker()
+        months: dict[str, float] = {}
+        for item in body.get("items", [])[:15]:
+            figi = ticker_figi.get(item["secid"])
+            qty = float(item.get("qty", 0))
+            if not figi or qty <= 0:
+                continue
+            try:
+                if item.get("type") == "bond":
+                    for c in t.bond_coupons(figi, 365):
+                        key = c["date"].strftime("%Y-%m")
+                        months[key] = months.get(key, 0.0) + c["value"] * qty
+                else:
+                    for d in t.dividends_future(figi, 365):
+                        key = d["ex_date"].strftime("%Y-%m")
+                        months[key] = months.get(key, 0.0) + d["value"] * qty
+            except Exception:
+                log.warning("Couponflow failed for %s", item["secid"])
+            time.sleep(0.12)
+        return {"months": [
+            {"month": k, "amount": round(v, 0)}
+            for k, v in sorted(months.items())
+        ], "total": round(sum(months.values()), 0)}
+    finally:
+        t.close()

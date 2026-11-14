@@ -111,3 +111,13 @@ class PortfolioSnapshot(Base):
     cash: Mapped[float] = mapped_column(Float, default=0)
 
     __table_args__ = ({"sqlite_autoincrement": True},)
+
+
+class Watchlist(Base):
+    """Watchlist пользователя: бумаги для наблюдения и алертов."""
+
+    __tablename__ = "watchlist"
+
+    secid: Mapped[str] = mapped_column(String(20), primary_key=True)
+    added_price: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

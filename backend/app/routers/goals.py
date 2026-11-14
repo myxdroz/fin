@@ -18,6 +18,10 @@ router = APIRouter(prefix="/api/goals", tags=["goals"])
 
 CAPITAL_GOAL_KEY = "capital_goal"
 DEFAULT_CAPITAL_GOAL = 1_400_000.0
+INFLATION_KEY = "inflation_rate"
+DEPOSIT_KEY = "deposit_rate"
+DEFAULT_INFLATION = 7.0
+DEFAULT_DEPOSIT = 16.0
 
 # 60% облигации «класса ААА» (ОФЗ как безрисковый эквивалент) + 40% голубые фишки
 BOND_SHARE = 0.6
@@ -52,6 +56,11 @@ SECTOR_ORDER = [
 
 class CapitalGoalUpdate(BaseModel):
     value: float = Field(gt=0)
+
+
+class BenchmarksUpdate(BaseModel):
+    inflation: float = Field(ge=0, le=50)
+    deposit: float = Field(ge=0, le=100)
 
 
 def _get_setting(db: Session, key: str, default: float) -> float:
@@ -176,6 +185,8 @@ def get_goals(db: Session = Depends(get_db)):
     capital_goal = _get_setting(db, CAPITAL_GOAL_KEY, DEFAULT_CAPITAL_GOAL)
     goal_income = _goal_income(db, capital_goal)
     current = _current_state(db)
+    inflation = _get_setting(db, INFLATION_KEY, DEFAULT_INFLATION)
+    deposit = _get_setting(db, DEPOSIT_KEY, DEFAULT_DEPOSIT)
 
     cur_value = current.get("value")
     cur_income = current.get("income_month")
@@ -183,12 +194,31 @@ def get_goals(db: Session = Depends(get_db)):
         "capital_goal": capital_goal,
         "goal_income": goal_income,
         "current": current,
+        "benchmarks": {
+            "inflation": inflation,
+            "deposit": deposit,
+            # реальная доходность цели за вычетом инфляции
+            "goal_real_pct": round(goal_income["annual_pct"] - inflation, 2),
+            "deposit_real_pct": round(deposit - inflation, 2),
+        },
         "progress_capital_pct": round(cur_value / capital_goal * 100, 1) if cur_value else None,
         "progress_income_pct": (
             round(cur_income / goal_income["monthly"] * 100, 1)
             if cur_income is not None and goal_income["monthly"] else None
         ),
     }
+
+
+@router.put("/benchmarks")
+def set_benchmarks(body: BenchmarksUpdate, db: Session = Depends(get_db)):
+    for key, val in ((INFLATION_KEY, body.inflation), (DEPOSIT_KEY, body.deposit)):
+        row = db.get(Setting, key)
+        if not row:
+            db.add(Setting(key=key, value=val))
+        else:
+            row.value = val
+    db.commit()
+    return {"inflation": body.inflation, "deposit": body.deposit}
 
 
 @router.put("/capital")

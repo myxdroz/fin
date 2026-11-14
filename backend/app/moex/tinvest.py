@@ -94,6 +94,10 @@ class TInvestDividends:
                 result[i["figi"]] = {"ticker": i.get("ticker", ""), "name": i.get("name", "")}
         return result
 
+    def figi_by_ticker(self) -> dict[str, str]:
+        """ticker (для облигаций = ISIN) -> figi."""
+        return {v["ticker"]: k for k, v in self.instruments_by_figi().items() if v["ticker"]}
+
     def dividends(self, figi: str, years: int = 3) -> list[dict]:
         """История дивидендов: дата фиксации реестра + сумма на акцию, за последние N лет."""
         now = date.today()

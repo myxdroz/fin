@@ -85,5 +85,60 @@ def maybe_notify(db) -> None:
         except Exception:
             log.exception("Index-exit check failed")
 
+    # 3. watchlist: купоны/оферты/дивиденды ближайшие две недели + падение цены
+    from ..models import Share, Watchlist
+
+    watched = db.scalars(select(Watchlist)).all()
+    if watched:
+        today = date.today()
+        wl_lines = []
+        try:
+            from .moex.tinvest import TInvestDividends
+            import time as _time
+
+            t = TInvestDividends(settings.tinvest_token)
+            try:
+                figi_map = t.shares_figi()          # ticker -> figi для акций
+                ticker_figi = t.figi_by_ticker()    # ticker(=ISIN) -> figi для всех
+                for w in watched:
+                    bond = db.get(Bond, w.secid)
+                    if bond:
+                        if bond.offer_date and 0 <= (bond.offer_date - today).days <= 21:
+                            wl_lines.append(
+                                f"• {bond.shortname}: оферта {bond.offer_date} "
+                                f"(через {(bond.offer_date - today).days} дн.)")
+                        if w.added_price and bond.last_price < w.added_price * 0.93:
+                            drop = (bond.last_price / w.added_price - 1) * 100
+                            wl_lines.append(f"• {bond.shortname}: падение {drop:.1f}% от цены добавления")
+                        # купоны ближайшие 14 дней (тикер облигации = ISIN)
+                        figi = ticker_figi.get(w.secid)
+                        if figi:
+                            try:
+                                for c in t.bond_coupons(figi, 14):
+                                    wl_lines.append(f"• {bond.shortname}: купон {c['value']} ₽ {c['date']}")
+                            except Exception:
+                                pass
+                        continue
+                    figi = figi_map.get(w.secid)
+                    if not figi:
+                        continue
+                    try:
+                        for d in t.dividends_future(figi, 14):
+                            wl_lines.append(
+                                f"• {w.secid}: дивидендная отсечка {d['ex_date']}, {d['value']} ₽/акцию")
+                        share = db.get(Share, w.secid)
+                        if w.added_price and share and share.last_price < w.added_price * 0.93:
+                            drop = (share.last_price / w.added_price - 1) * 100
+                            wl_lines.append(f"• {w.secid}: падение {drop:.1f}% от цены добавления")
+                    except Exception:
+                        pass
+                    _time.sleep(0.12)
+            finally:
+                t.close()
+        except Exception:
+            log.exception("Watchlist check failed")
+        if wl_lines:
+            parts.append("👀 Watchlist:\n" + "\n".join(wl_lines[:15]))
+
     if parts:
         send_message("\n\n".join(parts))

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import Bond, Dividend, Share
+from ..models import Bond, Dividend, IndexWeight, Share
 
 
 class BondFilter(BaseModel):
@@ -77,6 +77,25 @@ def bond_reliability(b: Bond, key_rate: float) -> int:
     return max(score, 1)
 
 
+def bond_score(b: Bond, key_rate: float) -> int:
+    """Скоринг 0–100: доходность (40) + надёжность (30) + ликвидность (15) + дюрация (15) − флаги."""
+    pts = min(max(b.yield_at_pricing, 0.0), key_rate + 10) / (key_rate + 10) * 40
+    pts += bond_reliability(b, key_rate) / 5 * 30
+    pts += min(b.val_today / 50_000_000, 1.0) * 15
+    pts += max(0.0, 15 - b.duration / 365 / 10 * 15)
+    pts -= 4 * len(bond_red_flags(b, key_rate))
+    return int(max(0, min(100, round(pts))))
+
+
+def verdict(score: int) -> str:
+    """Вердикт по совокупности критериев (не индивидуальная инвестрекомендация)."""
+    if score >= 70:
+        return "Привлекательно"
+    if score >= 50:
+        return "Нейтрально"
+    return "Рискованно"
+
+
 def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
     stmt = select(Bond).where(
         Bond.yield_at_pricing >= f.min_yield,
@@ -126,6 +145,8 @@ def screen_bonds(db: Session, f: BondFilter) -> list[dict]:
             "face_value": b.face_value,
             "val_today": b.val_today,
             "reliability": bond_reliability(b, settings.key_rate),
+            "score": bond_score(b, settings.key_rate),
+            "verdict": verdict(bond_score(b, settings.key_rate)),
             "red_flags": bond_red_flags(b, settings.key_rate),
             "flags": {
                 "offer": bool(b.offer_flag),
@@ -148,29 +169,44 @@ def screen_shares(db: Session, f: ShareFilter) -> list[dict]:
     )
     rows = db.execute(stmt).scalars().all()
     secids = [s.secid for s in rows]
+    index_members = {w.secid for w in db.scalars(select(IndexWeight)).all()}
     div_map: dict[str, float] = {}
+    div_years: dict[str, set] = {}
     if secids:
         divs = db.execute(select(Dividend).where(Dividend.secid.in_(secids))).scalars().all()
         today = date.today()
         for d in divs:
             if d.ex_date and (today - d.ex_date).days <= 365:
                 div_map[d.secid] = div_map.get(d.secid, 0.0) + d.value
+            if d.ex_date and (today - d.ex_date).days <= 5 * 365:
+                div_years.setdefault(d.secid, set()).add(d.ex_date.year)
 
     result = []
     for s in rows:
         div_yield = div_map.get(s.secid, 0.0) / s.last_price * 100 if s.last_price else 0.0
         if div_yield < f.min_div_yield:
             continue
+        years = len(div_years.get(s.secid, set()))
+        score = (min(div_yield, 20) / 20 * 40
+                 + min(s.val_today / 1_000_000_000, 1) * 30
+                 + (20 if s.secid in index_members else 0)
+                 + (10 if years >= 4 else 5 if years >= 2 else 0))
+        score = int(max(0, min(100, round(score))))
         result.append({
             "secid": s.secid,
             "shortname": s.shortname,
             "price": s.last_price,
             "div_yield_12m": round(div_yield, 2),
             "dividends_12m": round(div_map.get(s.secid, 0.0), 2),
+            "div_years_5y": years,
+            "div_stable": years >= 4,
+            "score": score,
+            "verdict": verdict(score),
+            "in_index": s.secid in index_members,
             "lot_size": s.lot_size,
             "lot_cost": round(s.last_price * s.lot_size, 2),
             "list_level": s.list_level,
             "val_today": s.val_today,
         })
-    result.sort(key=lambda x: -x["div_yield_12m"])
+    result.sort(key=lambda x: -x["score"])
     return result[: f.limit]

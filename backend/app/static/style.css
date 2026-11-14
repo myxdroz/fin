@@ -118,3 +118,10 @@ footer { margin-top: 36px; color: var(--muted); font-size: 12px; border-top: 1px
   .donut-wrap { gap: 14px; }
   .meta { font-size: 12.5px; gap: 10px; }
 }
+
+.verdict-good { background: #14532d; color: #4ade80; }
+.verdict-mid { background: #422006; color: #fbbf24; }
+.verdict-bad { background: #7f1d1d; color: #f87171; }
+.star { background: none; border: none; color: #4a5568; font-size: 17px; cursor: pointer; padding: 0 4px; }
+.star.on { color: #fbbf24; }
+.warn-line { color: #fbbf24; margin: 6px 0; }
